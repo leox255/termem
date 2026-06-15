@@ -98,6 +98,29 @@ impl ScanRoots {
             shell: Some(h.join(".termem/shell")),
         }
     }
+
+    /// Home defaults with per-source environment overrides. Set `TERMEM_<X>_DIR`
+    /// (or `TERMEM_OPENCODE_DB`) to a path to relocate a source, or to an empty
+    /// string to disable it. Useful for synced/non-standard layouts and tests.
+    pub fn from_env() -> Self {
+        let mut r = ScanRoots::home();
+        apply_env(&mut r.claude, "TERMEM_CLAUDE_DIR");
+        apply_env(&mut r.codex, "TERMEM_CODEX_DIR");
+        apply_env(&mut r.gemini, "TERMEM_GEMINI_DIR");
+        apply_env(&mut r.opencode, "TERMEM_OPENCODE_DB");
+        apply_env(&mut r.shell, "TERMEM_SHELL_DIR");
+        r
+    }
+}
+
+fn apply_env(slot: &mut Option<PathBuf>, var: &str) {
+    if let Ok(v) = std::env::var(var) {
+        *slot = if v.is_empty() {
+            None
+        } else {
+            Some(PathBuf::from(v))
+        };
+    }
 }
 
 impl Default for ScanRoots {

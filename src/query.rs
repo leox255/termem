@@ -20,7 +20,7 @@ const COLUMNS: &str = "file_path, id, source, cwd, title, first_prompt, last_pro
      model, git_branch, started_at, updated_at, msg_count";
 
 /// Escape SQL LIKE wildcards so the text matches literally (use with `ESCAPE '\\'`).
-fn escape_like(s: &str) -> String {
+pub(crate) fn escape_like(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
         if c == '%' || c == '_' || c == '\\' {
@@ -37,7 +37,7 @@ fn like_prefix(cwd: &str) -> String {
 }
 
 /// SQL fragment + bound args restricting rows to a directory scope.
-fn scope_clause(scope: Scope, cwd: &str) -> (String, Vec<Value>) {
+pub(crate) fn scope_clause(scope: Scope, cwd: &str) -> (String, Vec<Value>) {
     match scope {
         Scope::Here => (
             " AND cwd = ?".to_string(),

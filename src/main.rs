@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use termem::index::Index;
 use termem::model::{rel_time, Session, Source};
 use termem::query::{self, Scope};
-use termem::{resume, shellhook, tui};
+use termem::{mcp, resume, shellhook, tui, wrappers};
 
 #[derive(Parser)]
 #[command(
@@ -27,8 +27,10 @@ enum Cmd {
     Resume(ResumeArgs),
     /// Open the interactive picker (this is also the default with no subcommand).
     Tui(TuiArgs),
-    /// Print shell integration: `eval "$(termem init zsh)"`.
+    /// Emit shell integration (zsh, bash) or an agent wrapper (claude, codex, ...).
     Init(InitArgs),
+    /// Run the memory MCP server over stdio (`claude mcp add termem -- termem mcp`).
+    Mcp,
     /// Print a one-line session count for a directory (used by the cd hook).
     Hint(HintArgs),
 }
@@ -90,8 +92,8 @@ struct ResumeArgs {
 
 #[derive(Args)]
 struct InitArgs {
-    /// Shell to emit integration for: zsh or bash.
-    shell: String,
+    /// What to emit: a shell (zsh, bash) or an agent (claude, codex, opencode, gemini, pi).
+    target: String,
 }
 
 #[derive(Args)]
@@ -109,6 +111,7 @@ fn main() -> Result<()> {
         Some(Cmd::Resume(a)) => cmd_resume(a),
         Some(Cmd::Tui(a)) => cmd_tui(a.scope),
         Some(Cmd::Init(a)) => cmd_init(a),
+        Some(Cmd::Mcp) => mcp::serve(),
         Some(Cmd::Hint(a)) => cmd_hint(a),
         None => cmd_tui(ScopeArgs::default()),
     }
@@ -245,16 +248,23 @@ fn hint_line(counts: &[(String, i64)]) -> Option<String> {
 }
 
 fn cmd_init(a: InitArgs) -> Result<()> {
-    match shellhook::snippet(&a.shell) {
-        Some(s) => {
-            print!("{s}");
-            Ok(())
-        }
-        None => {
-            eprintln!("Unknown shell '{}'. Supported: zsh, bash", a.shell);
-            std::process::exit(2);
-        }
+    let target = a.target.to_lowercase();
+    // Shell integration first.
+    if let Some(snippet) = shellhook::snippet(&target) {
+        print!("{snippet}");
+        return Ok(());
     }
+    // Otherwise an agent wrapper (skill / AGENTS.md / GEMINI.md).
+    if let Some(wrapper) = wrappers::for_agent(&target) {
+        print!("{wrapper}");
+        return Ok(());
+    }
+    eprintln!(
+        "Unknown init target '{}'.\n  shells: zsh, bash\n  agents: {}",
+        target,
+        wrappers::known_agents().join(", ")
+    );
+    std::process::exit(2);
 }
 
 // ---- helpers ----

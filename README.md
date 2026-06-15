@@ -1,6 +1,6 @@
 # termem
 
-See and resume your Claude Code, Codex, opencode, Gemini, and shell sessions for the directory you are in.
+See and resume your Claude Code, Codex, opencode, Gemini, and shell sessions for the directory you are in. It also runs as an MCP server, so your coding agents share memory across sessions and across tools.
 
 Run `termem` in a project folder and you get a list of every session that started there or in a subfolder, with its title, age, and message count. Pick one and it reopens in the right tool and directory.
 
@@ -54,6 +54,21 @@ eval "$(termem init bash)"
 ```
 
 `tm` opens the picker. `tmr <query>` resumes the best match without the picker. Set `TERMEM_NO_HINT=1` to turn off the message on `cd`.
+
+## Shared memory (MCP)
+
+termem also runs as an MCP server, so a coding agent can recall what happened in a directory before, even work done by a different agent. termem stores agent-written summaries in its own sidecar (never in the source files) and serves them to whatever agent asks next. It never calls a model and never makes a network request: the agent does the reasoning, termem does retrieval and storage.
+
+Register it with Claude Code:
+
+```
+claude mcp add termem -- termem mcp
+termem init claude > ~/.claude/skills/termem/SKILL.md
+```
+
+For other agents, `termem init <agent>` prints the right wrapper (claude, codex, opencode, gemini, pi). Every wrapper shares one body and one safety contract, so the workflow never drifts between agents.
+
+The tools: `recall` (orient when you enter a directory), `search` (find a past session), `get_session` (read a transcript, paginated), `save_summary` (store a primer for the next agent), and `stats`. `recall` and `search` default to the current directory tree; widening to the whole machine is explicit.
 
 ## How it works
 
