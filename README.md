@@ -1,95 +1,73 @@
-# termem — terminal memory
+# termem
 
-`cd` into a folder, run `termem`, and see **every** AI/coding session that was
-ever started there — Claude Code, Codex, and (opt-in) shell history — with a
-title, age, and message count. Pick one and it resumes instantly.
+See and resume your Claude Code, Codex, and shell sessions for the directory you are in.
 
-No more `claude --resume` roulette or digging through `~/.codex/sessions`.
-
-```
-$ termem
-┌ filter: _ ──────────────────────────────────────────────────┐
-│ 12 session(s) · /Users/you/ai/apps/termem                     │
-└───────────────────────────────────────────────────────────────┘
-┌ sessions ───────────────────┐┌ preview ─────────────────────┐
-│▶ ◆  2m  Build terminal memo…││ Build terminal memory system  │
-│  ◇  1h  Refactor the importer││                               │
-│  ◆  3h  Fix the WAL deadlock ││ source  claude                │
-│  ❯  1d  cargo test loop      ││ updated 2m ago · 123 msgs     │
-└──────────────────────────────┘│ model   claude-opus-4-8       │
- ↑↓ move  ⏎ resume  type filter └───────────────────────────────┘
-```
-
-## Why it's cheap and fast
-
-- **Zero tokens.** termem never calls an LLM. Titles are read from data the
-  tools already wrote: Claude Code's `ai-title` line, Codex's `thread_name`,
-  or the first user prompt as a fallback.
-- **Incremental index.** Sessions are cached in SQLite keyed on
-  `(file mtime, size)`. The first scan of ~388 MB / 345 sessions takes <1s
-  (parsed in parallel with rayon); every scan after that is ~10 ms because only
-  changed files are re-read.
-- **Single static binary**, written in Rust.
-
-## How it works
-
-| Source | Location | Title from | Resume |
-|--------|----------|-----------|--------|
-| Claude Code | `~/.claude/projects/<enc-cwd>/<uuid>.jsonl` | `ai-title` → first prompt | `claude --resume <id>` |
-| Codex | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` | `session_index.jsonl` `thread_name` → first prompt | `codex resume <id>` |
-| Shell (opt-in) | `~/.termem/shell/<session>.log` | first command | `cd <dir>` |
-
-Every session is attributed to the directory it was started in (Claude/Codex
-record `cwd` in their transcripts). termem groups by that, so a project folder
-shows exactly the sessions that happened there or in any subdirectory.
+Run `termem` in a project folder and you get a list of every session that started there or in a subfolder, with its title, age, and message count. Pick one and it reopens in the right tool and directory.
 
 ## Install
 
-```sh
+You need a Rust toolchain. Get one at https://rustup.rs.
+
+Install from GitHub:
+
+```
+cargo install --git https://github.com/leox255/termem
+```
+
+Or from a local clone:
+
+```
+git clone https://github.com/leox255/termem
+cd termem
 cargo install --path .
-# or: cargo build --release && cp target/release/termem ~/.local/bin/
 ```
 
-## Usage
+Either way you get a `termem` binary in `~/.cargo/bin` (make sure that is on your `PATH`).
 
-```sh
-termem                       # interactive picker for the current directory (+ subdirs)
-termem --here                # only sessions started exactly here
-termem --all                 # every session, anywhere
-termem ls                    # non-interactive table
-termem ls --json             # machine-readable
-termem ls --source codex     # filter by tool (claude,codex,shell)
-termem ls -s "wal deadlock"  # substring search across title/prompt/cwd
-termem resume <id|text>      # resume best match (cd's + launches the tool)
-termem resume <id> --print   # just print the `cd … && …` command
-termem index                 # refresh the index now (also done automatically)
+## Use
+
+```
+termem                       open the picker for the current directory and subfolders
+termem --here                only sessions started exactly here
+termem --all                 every session, any directory
+termem ls                    print a table instead of opening the picker
+termem ls --json             machine readable output
+termem ls --source codex     filter by tool: claude, codex, shell
+termem ls -s "query"         search the title, prompt, and path
+termem resume <id|text>      resume the best match
+termem resume <id> --print   print the command instead of running it
+termem index                 rebuild the index now
 ```
 
-Inside the picker: type to fuzzy-filter, `↑/↓` (or `Ctrl-N/P`) to move,
-`Enter` to resume, `Esc` to quit.
+In the picker: type to filter, arrow keys to move, Enter to resume, Esc to quit.
 
 ## Shell integration (optional)
 
-Makes plain shell history directory-aware and adds `tm` / `tmr` helpers:
+This tracks plain shell history per directory, adds `tm` and `tmr` helpers, and prints a session count when you `cd` into a folder.
 
-```sh
+```
 # ~/.zshrc
 eval "$(termem init zsh)"
+
 # ~/.bashrc
 eval "$(termem init bash)"
 ```
 
-- `tm` — open the picker for the current directory.
-- `tmr <query>` — resume the best match without opening the picker.
+`tm` opens the picker. `tmr <query>` resumes the best match without the picker. Set `TERMEM_NO_HINT=1` to turn off the message on `cd`.
 
-The hook appends `epoch⇥cwd⇥command` to a per-session log under
-`~/.termem/shell/`, so future shell sessions show up alongside Claude/Codex.
+## How it works
 
-## Custom session locations
+termem reads the session files the tools already write:
 
-By default termem scans `~/.claude/projects`, `~/.codex/sessions`, and
-`~/.termem/shell`. The scan roots are injectable in the library
-(`ScanRoots`) for synced/non-standard layouts.
+```
+Claude Code   ~/.claude/projects/<dir>/<id>.jsonl
+Codex         ~/.codex/sessions/.../rollout-*.jsonl
+Shell         ~/.termem/shell/*.log   (written by the shell hook)
+```
+
+Each session records the directory it ran in, so termem groups by directory. A shell session that moves between directories is listed under each one. Titles come from the title the tool already stored, or the first prompt if there is none. termem does not call any model and does not send your data anywhere.
+
+Sessions are cached in SQLite, keyed on each file's modification time and size, so only changed files are re-read. A full scan of a few hundred sessions takes well under a second and later scans are near instant.
 
 ## License
 

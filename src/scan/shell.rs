@@ -1,41 +1,46 @@
 //! Parser for termem's own shell session logs.
 //!
 //! Written by the `termem init` hook, one tab-separated record per command:
-//! `<epoch_seconds>\t<cwd>\t<command>`. A session file is one shell session;
-//! its `cwd` is where it started (the directory of its first command).
+//! `<epoch_seconds>\t<cwd>\t<command>`. A single shell session usually visits
+//! several directories, so it is indexed once per directory it touched: each
+//! per-directory entry shows up when you are in that directory.
 
 use crate::model::{truncate_title, Session, Source};
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
-pub fn parse(path: &Path, mtime_ms: i64) -> anyhow::Result<Option<Session>> {
+pub fn parse(path: &Path, mtime_ms: i64) -> anyhow::Result<Vec<Session>> {
     let id = path
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_default();
     let file = File::open(path)?;
-    let reader = BufReader::new(file);
     Ok(parse_reader(
-        reader,
+        BufReader::new(file),
         id,
         path.to_string_lossy().to_string(),
         mtime_ms,
     ))
 }
 
+struct DirAcc {
+    first_cmd: String,
+    last_cmd: String,
+    started: i64,
+    updated: i64,
+    count: i64,
+}
+
+/// Returns one [`Session`] per distinct directory seen in the log.
 pub fn parse_reader<R: BufRead>(
     reader: R,
     id: String,
     file_path: String,
     mtime_ms: i64,
-) -> Option<Session> {
-    let mut cwd: Option<String> = None;
-    let mut first_cmd: Option<String> = None;
-    let mut last_cmd: Option<String> = None;
-    let mut started = i64::MAX;
-    let mut updated = 0i64;
-    let mut count = 0i64;
+) -> Vec<Session> {
+    let mut dirs: HashMap<String, DirAcc> = HashMap::new();
 
     for line in reader.lines().map_while(Result::ok) {
         if line.trim().is_empty() {
@@ -48,49 +53,45 @@ pub fn parse_reader<R: BufRead>(
         if dir.is_empty() || cmd.is_empty() {
             continue;
         }
-        count += 1;
+        let acc = dirs.entry(dir.to_string()).or_insert(DirAcc {
+            first_cmd: String::new(),
+            last_cmd: String::new(),
+            started: i64::MAX,
+            updated: 0,
+            count: 0,
+        });
+        if acc.first_cmd.is_empty() {
+            acc.first_cmd = cmd.to_string();
+        }
+        acc.last_cmd = cmd.to_string();
+        acc.count += 1;
         if let Ok(secs) = ts.parse::<i64>() {
             let ms = secs * 1000;
-            started = started.min(ms);
-            updated = updated.max(ms);
+            acc.started = acc.started.min(ms);
+            acc.updated = acc.updated.max(ms);
         }
-        if cwd.is_none() {
-            cwd = Some(dir.to_string());
-        }
-        if first_cmd.is_none() {
-            first_cmd = Some(cmd.to_string());
-        }
-        last_cmd = Some(cmd.to_string());
     }
 
-    let cwd = cwd?;
-    if started == i64::MAX {
-        started = if updated > 0 { updated } else { mtime_ms };
-    }
-    if updated == 0 {
-        updated = mtime_ms;
-    }
-    let first_prompt = first_cmd.unwrap_or_default();
-    let title = if first_prompt.is_empty() {
-        "(shell session)".to_string()
-    } else {
-        truncate_title(&first_prompt)
-    };
-
-    Some(Session {
-        id,
-        source: Source::Shell,
-        file_path,
-        cwd,
-        title,
-        first_prompt,
-        last_prompt: last_cmd.unwrap_or_default(),
-        model: None,
-        git_branch: None,
-        started_at: started,
-        updated_at: updated,
-        msg_count: count,
-    })
+    dirs.into_iter()
+        .map(|(dir, a)| {
+            let started = if a.started == i64::MAX { mtime_ms } else { a.started };
+            let updated = if a.updated == 0 { mtime_ms } else { a.updated };
+            Session {
+                id: id.clone(),
+                source: Source::Shell,
+                file_path: file_path.clone(),
+                cwd: dir,
+                title: truncate_title(&a.first_cmd),
+                first_prompt: a.first_cmd,
+                last_prompt: a.last_cmd,
+                model: None,
+                git_branch: None,
+                started_at: started,
+                updated_at: updated,
+                msg_count: a.count,
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -99,13 +100,21 @@ mod tests {
     use std::io::Cursor;
 
     #[test]
-    fn parses_tsv_log() {
-        let lines = "1718450000\t/work/proj\tgit status\n1718450050\t/work/proj/sub\tcargo test\n";
-        let s = parse_reader(Cursor::new(lines), "sess1".into(), "/f.log".into(), 0).unwrap();
-        assert_eq!(s.cwd, "/work/proj");
-        assert_eq!(s.title, "git status");
-        assert_eq!(s.last_prompt, "cargo test");
-        assert_eq!(s.msg_count, 2);
-        assert_eq!(s.started_at, 1718450000_000);
+    fn one_session_per_directory() {
+        let lines = "1718450000\t/work/proj\tgit status\n\
+                     1718450050\t/work/proj/sub\tcargo test\n\
+                     1718450090\t/work/proj\tgit commit\n";
+        let sessions = parse_reader(Cursor::new(lines), "sess1".into(), "/f.log".into(), 0);
+        assert_eq!(sessions.len(), 2, "one entry per distinct directory");
+
+        let proj = sessions.iter().find(|s| s.cwd == "/work/proj").unwrap();
+        assert_eq!(proj.title, "git status");
+        assert_eq!(proj.last_prompt, "git commit");
+        assert_eq!(proj.msg_count, 2);
+        assert_eq!(proj.started_at, 1718450000_000);
+
+        let sub = sessions.iter().find(|s| s.cwd == "/work/proj/sub").unwrap();
+        assert_eq!(sub.title, "cargo test");
+        assert_eq!(sub.msg_count, 1);
     }
 }

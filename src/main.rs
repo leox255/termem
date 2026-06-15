@@ -29,6 +29,8 @@ enum Cmd {
     Tui(TuiArgs),
     /// Print shell integration: `eval "$(termem init zsh)"`.
     Init(InitArgs),
+    /// Print a one-line session count for a directory (used by the cd hook).
+    Hint(HintArgs),
 }
 
 #[derive(Args, Default)]
@@ -92,6 +94,13 @@ struct InitArgs {
     shell: String,
 }
 
+#[derive(Args)]
+struct HintArgs {
+    /// Directory to summarize (default: current directory).
+    #[arg(long)]
+    cwd: Option<PathBuf>,
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.cmd {
@@ -100,6 +109,7 @@ fn main() -> Result<()> {
         Some(Cmd::Resume(a)) => cmd_resume(a),
         Some(Cmd::Tui(a)) => cmd_tui(a.scope),
         Some(Cmd::Init(a)) => cmd_init(a),
+        Some(Cmd::Hint(a)) => cmd_hint(a),
         None => cmd_tui(ScopeArgs::default()),
     }
 }
@@ -183,6 +193,43 @@ fn cmd_tui(scope: ScopeArgs) -> Result<()> {
         Some(s) => Err(resume::exec(&s)),
         None => Ok(()),
     }
+}
+
+fn cmd_hint(a: HintArgs) -> Result<()> {
+    // Runs on every `cd`, so it reads the cached index without refreshing.
+    // It prints nothing when there are no sessions (or no index yet).
+    let idx = Index::open_default()?;
+    let cwd = resolve_cwd(&a.cwd)?;
+    let res = query::query(idx.conn(), &cwd, Scope::Subtree, &[], None, 1000)?;
+    if res.is_empty() {
+        return Ok(());
+    }
+    let (mut claude, mut codex, mut shell) = (0, 0, 0);
+    for s in &res {
+        match s.source {
+            Source::Claude => claude += 1,
+            Source::Codex => codex += 1,
+            Source::Shell => shell += 1,
+        }
+    }
+    let mut parts = Vec::new();
+    if claude > 0 {
+        parts.push(format!("{claude} claude"));
+    }
+    if codex > 0 {
+        parts.push(format!("{codex} codex"));
+    }
+    if shell > 0 {
+        parts.push(format!("{shell} shell"));
+    }
+    let noun = if res.len() == 1 { "session" } else { "sessions" };
+    println!(
+        "termem: {} {} here ({}). run 'termem' to resume.",
+        res.len(),
+        noun,
+        parts.join(", ")
+    );
+    Ok(())
 }
 
 fn cmd_init(a: InitArgs) -> Result<()> {

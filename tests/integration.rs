@@ -110,6 +110,45 @@ fn incremental_refresh_only_reparses_changed_files() {
 }
 
 #[test]
+fn shell_log_indexes_one_row_per_directory() {
+    let dir = std::env::temp_dir().join(format!("termem-sh-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("s1.log"),
+        "1718450000\t/tmp/projA\tls\n\
+         1718450010\t/tmp/projB\tcargo build\n\
+         1718450020\t/tmp/projA\tgit status\n",
+    )
+    .unwrap();
+
+    let roots = ScanRoots {
+        claude: None,
+        codex: None,
+        shell: Some(dir.clone()),
+    };
+    let db = temp_db("shell");
+    let _ = std::fs::remove_file(&db);
+    let mut idx = Index::open_with_roots(&db, roots).unwrap();
+
+    let stats = idx.refresh().unwrap();
+    assert_eq!(stats.total, 1, "one log file");
+    assert_eq!(stats.parsed, 2, "two directories -> two indexed rows");
+
+    let a = query(idx.conn(), "/tmp/projA", Scope::Here, &[], None, 10).unwrap();
+    assert_eq!(a.len(), 1);
+    assert_eq!(a[0].source, Source::Shell);
+    assert_eq!(a[0].msg_count, 2, "two commands ran in projA");
+
+    let b = query(idx.conn(), "/tmp/projB", Scope::Here, &[], None, 10).unwrap();
+    assert_eq!(b.len(), 1);
+    assert_eq!(b[0].msg_count, 1);
+
+    let _ = std::fs::remove_file(&db);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn resolves_codex_sessions_for_compstack_with_titles() {
     if !home().join(".codex/sessions").exists() {
         eprintln!("skip: no codex data");

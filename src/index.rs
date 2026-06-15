@@ -12,7 +12,7 @@ use rusqlite::{params, Connection};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 
 pub struct Index {
     conn: Connection,
@@ -61,9 +61,12 @@ impl Index {
         if version != SCHEMA_VERSION {
             self.conn.execute_batch("DROP TABLE IF EXISTS sessions;")?;
         }
+        // `key` is the primary key (one file can yield several sessions, e.g. a
+        // shell log split per directory); `file_path` is the cache unit.
         self.conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS sessions (
-                file_path   TEXT PRIMARY KEY,
+                key         TEXT PRIMARY KEY,
+                file_path   TEXT NOT NULL,
                 id          TEXT NOT NULL,
                 source      TEXT NOT NULL,
                 cwd         TEXT NOT NULL,
@@ -78,6 +81,7 @@ impl Index {
                 file_mtime  INTEGER NOT NULL,
                 file_size   INTEGER NOT NULL
             );
+            CREATE INDEX IF NOT EXISTS idx_sessions_file ON sessions(file_path);
             CREATE INDEX IF NOT EXISTS idx_sessions_cwd ON sessions(cwd);
             CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at);
             CREATE INDEX IF NOT EXISTS idx_sessions_id ON sessions(id);",
@@ -87,10 +91,11 @@ impl Index {
         Ok(())
     }
 
+    /// Map each cached `file_path` to its stat info (rows from one file share it).
     fn load_existing(&self) -> Result<HashMap<String, (i64, i64)>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT file_path, file_mtime, file_size FROM sessions")?;
+            .prepare("SELECT file_path, file_mtime, file_size FROM sessions GROUP BY file_path")?;
         let rows = stmt.query_map([], |r| {
             Ok((r.get::<_, String>(0)?, (r.get::<_, i64>(1)?, r.get::<_, i64>(2)?)))
         })?;
@@ -112,20 +117,22 @@ impl Index {
             .collect();
         let thread_map = scan::codex::load_thread_map(self.roots.codex.as_deref());
 
-        // Parse only changed/new files, in parallel.
-        let parsed: Vec<(Session, i64, i64)> = candidates
-            .par_iter()
-            .filter_map(|c| {
+        // Files whose (mtime, size) changed since they were last indexed.
+        let changed: Vec<&scan::Candidate> = candidates
+            .iter()
+            .filter(|c| {
                 let key = c.path.to_string_lossy();
-                let changed = match existing.get(key.as_ref()) {
+                match existing.get(key.as_ref()) {
                     Some((mt, sz)) => *mt != c.mtime_ms || *sz != c.size,
                     None => true,
-                };
-                if !changed {
-                    return None;
                 }
-                scan::parse_candidate(c, &thread_map)
             })
+            .collect();
+
+        // Re-parse changed files in parallel (a file may yield several rows).
+        let parsed: Vec<(Session, i64, i64)> = changed
+            .par_iter()
+            .flat_map(|&c| scan::parse_candidate(c, &thread_map))
             .collect();
 
         let to_delete: Vec<String> = existing
@@ -135,11 +142,19 @@ impl Index {
             .collect();
 
         let tx = self.conn.transaction()?;
-        for path in &to_delete {
-            tx.execute("DELETE FROM sessions WHERE file_path = ?1", params![path])?;
+        // Clear all rows for changed files first so stale per-directory rows
+        // (e.g. a shell log that no longer touches a directory) don't linger.
+        for c in &changed {
+            tx.execute(
+                "DELETE FROM sessions WHERE file_path = ?1",
+                params![c.path.to_string_lossy().to_string()],
+            )?;
         }
         for (s, mtime, size) in &parsed {
             upsert(&tx, s, *mtime, *size)?;
+        }
+        for path in &to_delete {
+            tx.execute("DELETE FROM sessions WHERE file_path = ?1", params![path])?;
         }
         tx.commit()?;
 
@@ -151,13 +166,23 @@ impl Index {
     }
 }
 
+/// Unique row key. Shell logs split into one row per directory, so they include
+/// the directory; Claude/Codex are one row per file.
+fn session_key(s: &Session) -> String {
+    match s.source {
+        Source::Shell => format!("{}#{}", s.file_path, s.cwd),
+        _ => s.file_path.clone(),
+    }
+}
+
 fn upsert(conn: &Connection, s: &Session, mtime: i64, size: i64) -> Result<()> {
     conn.execute(
         "INSERT OR REPLACE INTO sessions
-            (file_path, id, source, cwd, title, first_prompt, last_prompt,
+            (key, file_path, id, source, cwd, title, first_prompt, last_prompt,
              model, git_branch, started_at, updated_at, msg_count, file_mtime, file_size)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",
         params![
+            session_key(s),
             s.file_path,
             s.id,
             s.source.as_str(),
