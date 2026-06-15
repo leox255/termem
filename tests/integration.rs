@@ -13,7 +13,13 @@ fn temp_db(tag: &str) -> PathBuf {
 }
 
 fn home() -> PathBuf {
-    PathBuf::from(std::env::var("HOME").expect("HOME"))
+    // HOME on Unix, USERPROFILE on Windows. The tests below self-skip when the
+    // expected data dir is absent, so this just needs to resolve without
+    // panicking on either platform.
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .expect("home dir")
 }
 
 #[test]
