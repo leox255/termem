@@ -14,6 +14,20 @@ use std::path::Path;
 
 const SCHEMA_VERSION: i64 = 2;
 
+/// Index DB path: `$TERMEM_DB` if set, else `~/.termem/index.db`.
+fn db_path() -> Result<std::path::PathBuf> {
+    if let Ok(p) = std::env::var("TERMEM_DB") {
+        let p = std::path::PathBuf::from(p);
+        if let Some(parent) = p.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        return Ok(p);
+    }
+    let dir = scan::home().join(".termem");
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir.join("index.db"))
+}
+
 pub struct Index {
     conn: Connection,
     roots: ScanRoots,
@@ -29,22 +43,18 @@ impl Index {
     /// Open (creating if needed) the index at the default location
     /// (`~/.termem/index.db`).
     pub fn open_default() -> Result<Index> {
-        let dir = scan::home().join(".termem");
-        std::fs::create_dir_all(&dir)?;
-        Index::open(&dir.join("index.db"))
+        Index::open_with_roots(&db_path()?, ScanRoots::from_env())
     }
 
     /// Open the existing index for a read-only query WITHOUT touching the schema
     /// (no migration, no writes). The cd hint uses this so a passive `cd` never
     /// rebuilds or mutates the cache.
     pub fn open_cached() -> Result<Index> {
-        let dir = scan::home().join(".termem");
-        std::fs::create_dir_all(&dir)?;
-        let conn = Connection::open(dir.join("index.db"))?;
+        let conn = Connection::open(db_path()?)?;
         conn.busy_timeout(std::time::Duration::from_secs(3))?;
         Ok(Index {
             conn,
-            roots: ScanRoots::home(),
+            roots: ScanRoots::from_env(),
         })
     }
 
@@ -71,6 +81,28 @@ impl Index {
     }
 
     fn ensure_schema(&mut self) -> Result<()> {
+        // Agent-authored summaries: the durable, valuable half of the store.
+        // Created unconditionally and never dropped when the session cache is
+        // rebuilt for a new SCHEMA_VERSION.
+        self.conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS summaries (
+                session_id   TEXT PRIMARY KEY,
+                summary      TEXT NOT NULL,
+                unfinished   TEXT,
+                tags         TEXT,
+                source_mtime INTEGER,
+                source_size  INTEGER,
+                created_at   INTEGER,
+                updated_at   INTEGER
+            );",
+        )?;
+        // Per-session staleness signal (0.4.0). Best-effort ALTER so an existing
+        // store upgrades in place without dropping its summaries.
+        let _ = self.conn.execute(
+            "ALTER TABLE summaries ADD COLUMN source_updated INTEGER",
+            [],
+        );
+
         let version: i64 = self
             .conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
