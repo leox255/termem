@@ -10,7 +10,7 @@ use anyhow::Result;
 use rusqlite::{Connection, OpenFlags};
 use serde_json::Value;
 use std::fs::File;
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufRead, BufReader};
 
 /// Absolute ceiling on messages read in one call, regardless of offset/limit.
 const HARD_CAP: usize = 50_000;
@@ -192,32 +192,24 @@ fn codex_injected(text: &str) -> bool {
 }
 
 fn read_gemini(s: &Session, cap: usize) -> Result<Vec<Message>> {
-    let mut buf = String::new();
-    File::open(&s.file_path)?.read_to_string(&mut buf)?;
-    let arr: Vec<Value> = match serde_json::from_str(&buf) {
-        Ok(Value::Array(a)) => a,
-        _ => return Ok(Vec::new()),
-    };
+    // The chats file is one session; collect_session handles both storage
+    // formats (top-level lines and $set/$push snapshots), deduped by id.
+    let f = File::open(&s.file_path)?;
+    let (_, _, msgs) = crate::scan::gemini::collect_session(BufReader::new(f));
     let mut out = Vec::new();
-    for rec in &arr {
-        if rec.get("sessionId").and_then(|x| x.as_str()) != Some(s.id.as_str()) {
+    for m in msgs {
+        if m.text.is_empty() || m.text.starts_with("<session_context>") {
             continue;
         }
-        let text = rec
-            .get("message")
-            .and_then(|x| x.as_str())
-            .unwrap_or("")
-            .trim();
-        if text.is_empty() {
-            continue;
-        }
+        let role = if m.role == "gemini" {
+            "assistant"
+        } else {
+            "user"
+        };
         out.push(Message {
-            role: "user".into(),
-            text: text.to_string(),
-            ts: rec
-                .get("timestamp")
-                .and_then(|x| x.as_str())
-                .map(|s| s.to_string()),
+            role: role.into(),
+            text: m.text,
+            ts: m.ts,
         });
         if out.len() >= cap {
             break;

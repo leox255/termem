@@ -54,25 +54,6 @@ fn collect_files(root: &Path, ext: &str, source: Source, out: &mut Vec<Candidate
     }
 }
 
-/// Like `collect_files` but matches an exact file name (Gemini's `logs.json`).
-fn collect_named(root: &Path, name: &str, source: Source, out: &mut Vec<Candidate>) {
-    if !root.exists() {
-        return;
-    }
-    for entry in WalkDir::new(root).into_iter().filter_map(|e| e.ok()) {
-        if entry.file_type().is_file() && entry.file_name() == name {
-            if let Ok(meta) = entry.metadata() {
-                out.push(Candidate {
-                    path: entry.path().to_path_buf(),
-                    source,
-                    mtime_ms: mtime_ms(&meta),
-                    size: meta.len() as i64,
-                });
-            }
-        }
-    }
-}
-
 /// The directories scanned for each source. `None` disables a source. Override
 /// the defaults to point termem at non-standard or synced session locations
 /// (and to test incremental behavior against static fixtures).
@@ -139,7 +120,9 @@ pub fn gather_candidates(roots: &ScanRoots) -> Vec<Candidate> {
         collect_files(p, "jsonl", Source::Codex, &mut out);
     }
     if let Some(p) = &roots.gemini {
-        collect_named(p, "logs.json", Source::Gemini, &mut out);
+        // Gemini's resumable sessions are the chats/*.jsonl files (logs.json,
+        // a prompt log, is .json so it's excluded by the extension filter).
+        collect_files(p, "jsonl", Source::Gemini, &mut out);
     }
     if let Some(db) = &roots.opencode {
         // One candidate for the whole DB. Combine the db + wal stat so writes

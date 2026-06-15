@@ -8,8 +8,11 @@ pub fn command_for(s: &Session) -> Option<(String, Vec<String>)> {
         Source::Claude => Some(("claude".into(), vec!["--resume".into(), s.id.clone()])),
         Source::Codex => Some(("codex".into(), vec!["resume".into(), s.id.clone()])),
         Source::Opencode => Some(("opencode".into(), vec!["--session".into(), s.id.clone()])),
-        // Gemini has no resume-by-id; reopen gemini in the session's directory.
-        Source::Gemini => Some(("gemini".into(), Vec::new())),
+        // Gemini loads a specific session from its chats file.
+        Source::Gemini => Some((
+            "gemini".into(),
+            vec!["--session-file".into(), s.file_path.clone()],
+        )),
         // A shell "session" can't be resumed; we just return to its directory.
         Source::Shell => None,
     }
@@ -116,9 +119,10 @@ mod tests {
     }
 
     #[test]
-    fn gemini_reopens_in_dir() {
+    fn gemini_loads_session_file() {
         let s = sess(Source::Gemini, "sid", "/p");
-        assert_eq!(print_line(&s), "cd /p && gemini");
+        // sess() sets file_path "/f".
+        assert_eq!(print_line(&s), "cd /p && gemini --session-file /f");
     }
 
     #[test]

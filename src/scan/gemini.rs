@@ -1,17 +1,19 @@
-//! Parser for Gemini CLI prompt logs.
+//! Parser for Gemini CLI sessions.
 //!
-//! Layout: `~/.gemini/tmp/<projectKey>/logs.json`, a JSON array of
-//! `{sessionId, messageId, type, message, timestamp}` records (user turns only).
-//! `~/.gemini/projects.json` maps each project directory to its key, which is
-//! the `tmp/<key>` directory name. One log holds several sessions (by
-//! sessionId). Gemini has no resume-by-id, so these are browse + reopen.
+//! Layout: `~/.gemini/tmp/<projectKey>/chats/session-<ts>-<id>.jsonl`. One file
+//! is one resumable session. Line 1 is metadata `{sessionId, startTime, ...}`.
+//! Messages are stored either as top-level lines (`type` "user"|"gemini" +
+//! `content[].text`) or inside `$set`/`$push` `messages` snapshots, sometimes
+//! both, so they are collected from all of those and deduped by message id.
+//! `~/.gemini/projects.json` maps each project directory to its `tmp/<key>`
+//! name. Resume with `gemini --session-file <path>`.
 
 use crate::model::{truncate_title, Session, Source};
 use crate::scan::parse_ms;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::Read;
+use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 
 /// Load `key -> directory` by inverting `~/.gemini/projects.json` (stored as
@@ -46,9 +48,10 @@ pub fn parse(
     mtime_ms: i64,
     project_map: &HashMap<String, String>,
 ) -> anyhow::Result<Vec<Session>> {
-    // The project key is the parent directory name: tmp/<key>/logs.json.
+    // tmp/<projectKey>/chats/session-*.jsonl -> key is two parents up.
     let key = path
         .parent()
+        .and_then(|p| p.parent())
         .and_then(|p| p.file_name())
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_default();
@@ -56,129 +59,206 @@ pub fn parse(
         Some(c) => c.clone(),
         None => return Ok(Vec::new()), // unmapped key: not attributable to a dir
     };
-    let mut buf = String::new();
-    File::open(path)?.read_to_string(&mut buf)?;
-    Ok(parse_str(
-        &buf,
+    let file = File::open(path)?;
+    Ok(parse_reader(
+        BufReader::new(file),
         &cwd,
         mtime_ms,
         path.to_string_lossy().as_ref(),
     ))
 }
 
-struct Acc {
-    first: String,
-    last: String,
-    started: i64,
-    updated: i64,
-    count: i64,
+/// A single message: role ("user" | "gemini") and its text.
+pub struct GMsg {
+    pub role: String,
+    pub text: String,
+    pub ts: Option<String>,
 }
 
-/// Split a logs.json array into one [`Session`] per `sessionId`.
-pub fn parse_str(content: &str, cwd: &str, mtime_ms: i64, file_path: &str) -> Vec<Session> {
-    let arr: Vec<Value> = match serde_json::from_str(content) {
-        Ok(Value::Array(a)) => a,
-        _ => return Vec::new(),
-    };
-    let mut sessions: HashMap<String, Acc> = HashMap::new();
-    let mut order: Vec<String> = Vec::new();
+/// Extract the joined text of a message's `content` (array of parts or a string).
+fn content_text(v: &Value) -> String {
+    match v.get("content") {
+        Some(Value::String(s)) => s.clone(),
+        Some(Value::Array(arr)) => {
+            let mut buf = String::new();
+            for el in arr {
+                if let Some(t) = el.get("text").and_then(|x| x.as_str()) {
+                    buf.push_str(t);
+                    buf.push('\n');
+                }
+            }
+            buf
+        }
+        _ => String::new(),
+    }
+}
 
-    for rec in &arr {
-        let sid = match rec.get("sessionId").and_then(|x| x.as_str()) {
-            Some(s) => s.to_string(),
-            None => continue,
-        };
-        let msg = rec
-            .get("message")
-            .and_then(|x| x.as_str())
-            .unwrap_or("")
-            .trim();
-        let ts = rec
+/// Build a message from a top-level line or a snapshot element, if it is one.
+fn gmsg(v: &Value) -> Option<GMsg> {
+    let role = match v.get("type").and_then(|x| x.as_str()) {
+        Some("user") => "user",
+        Some("gemini") => "gemini",
+        _ => return None,
+    };
+    Some(GMsg {
+        role: role.to_string(),
+        text: content_text(v).trim().to_string(),
+        ts: v
             .get("timestamp")
             .and_then(|x| x.as_str())
-            .and_then(parse_ms);
-        let acc = sessions.entry(sid.clone()).or_insert_with(|| {
-            order.push(sid.clone());
-            Acc {
-                first: String::new(),
-                last: String::new(),
-                started: i64::MAX,
-                updated: 0,
-                count: 0,
-            }
-        });
-        if !msg.is_empty() {
-            if acc.first.is_empty() {
-                acc.first = msg.to_string();
-            }
-            acc.last = msg.to_string();
-            acc.count += 1;
+            .map(|s| s.to_string()),
+    })
+}
+
+/// Read a chats file into (session_id, started_ms, ordered messages). Prefer the
+/// top-level message log when present; otherwise fall back to the `$set`/`$push`
+/// snapshots (some sessions store the conversation only there).
+pub fn collect_session<R: BufRead>(reader: R) -> (String, i64, Vec<GMsg>) {
+    let mut id = String::new();
+    let mut started = 0i64;
+    let mut top: Vec<GMsg> = Vec::new();
+    let mut snapshot: Vec<GMsg> = Vec::new();
+
+    for line in reader.lines().map_while(Result::ok) {
+        if line.is_empty() {
+            continue;
         }
-        if let Some(ms) = ts {
-            acc.started = acc.started.min(ms);
-            acc.updated = acc.updated.max(ms);
+        let v: Value = match serde_json::from_str(&line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if id.is_empty() {
+            if let Some(sid) = v.get("sessionId").and_then(|x| x.as_str()) {
+                id = sid.to_string();
+                started = v
+                    .get("startTime")
+                    .and_then(|x| x.as_str())
+                    .and_then(parse_ms)
+                    .unwrap_or(0);
+                continue;
+            }
+        }
+        if let Some(g) = gmsg(&v) {
+            top.push(g);
+        }
+        // A `$set.messages` is a full replacement of the message list.
+        if let Some(arr) = v.pointer("/$set/messages").and_then(|x| x.as_array()) {
+            snapshot = arr.iter().filter_map(gmsg).collect();
+        }
+        // A `$push.messages` appends.
+        if let Some(arr) = v.pointer("/$push/messages").and_then(|x| x.as_array()) {
+            snapshot.extend(arr.iter().filter_map(gmsg));
         }
     }
+    let msgs = if top.is_empty() { snapshot } else { top };
+    (id, started, msgs)
+}
 
-    order
-        .into_iter()
-        .filter_map(|sid| {
-            let a = sessions.remove(&sid)?;
-            if a.count == 0 {
-                return None;
+/// One session per chats file. Empty if the file has no `sessionId` metadata.
+pub fn parse_reader<R: BufRead>(
+    reader: R,
+    cwd: &str,
+    mtime_ms: i64,
+    file_path: &str,
+) -> Vec<Session> {
+    let (id, started, msgs) = collect_session(reader);
+    if id.is_empty() {
+        return Vec::new();
+    }
+
+    let mut first: Option<String> = None;
+    let mut last_user: Option<String> = None;
+    let mut count = 0i64;
+    for m in &msgs {
+        // The injected <session_context> preamble is not a real turn. Gemini
+        // assistant turns persist an empty `content`, so count them regardless
+        // of text; only use text to pick the title and last prompt.
+        if m.role == "user" && m.text.starts_with("<session_context>") {
+            continue;
+        }
+        count += 1;
+        if m.role == "user" && !m.text.is_empty() {
+            if first.is_none() {
+                first = Some(m.text.clone());
             }
-            let started = if a.started == i64::MAX {
-                mtime_ms
-            } else {
-                a.started
-            };
-            let updated = if a.updated == 0 { mtime_ms } else { a.updated };
-            Some(Session {
-                id: sid,
-                source: Source::Gemini,
-                file_path: file_path.to_string(),
-                cwd: cwd.to_string(),
-                title: truncate_title(&a.first),
-                first_prompt: a.first,
-                last_prompt: a.last,
-                model: None,
-                git_branch: None,
-                started_at: started,
-                updated_at: updated,
-                msg_count: a.count,
-            })
-        })
-        .collect()
+            last_user = Some(m.text.clone());
+        }
+    }
+    if count == 0 {
+        return Vec::new(); // empty / context-only session: not worth indexing
+    }
+
+    let started = if started > 0 { started } else { mtime_ms };
+    let first_prompt = first.unwrap_or_default();
+    let title = if first_prompt.is_empty() {
+        "(gemini session)".to_string()
+    } else {
+        truncate_title(&first_prompt)
+    };
+    vec![Session {
+        id,
+        source: Source::Gemini,
+        file_path: file_path.to_string(),
+        cwd: cwd.to_string(),
+        title,
+        last_prompt: last_user.unwrap_or_else(|| first_prompt.clone()),
+        first_prompt,
+        model: None,
+        git_branch: None,
+        started_at: started,
+        updated_at: mtime_ms,
+        msg_count: count,
+    }]
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Cursor;
 
     #[test]
-    fn splits_logs_by_session() {
-        let content = r#"[
-          {"sessionId":"a","messageId":0,"type":"user","message":"first ask","timestamp":"2026-05-14T13:00:00.000Z"},
-          {"sessionId":"a","messageId":1,"type":"user","message":"second ask","timestamp":"2026-05-14T13:05:00.000Z"},
-          {"sessionId":"b","messageId":0,"type":"user","message":"other session","timestamp":"2026-05-14T14:00:00.000Z"}
-        ]"#;
-        let sessions = parse_str(content, "/work/proj", 0, "/g/logs.json");
-        assert_eq!(sessions.len(), 2);
-        let a = sessions.iter().find(|s| s.id == "a").unwrap();
-        assert_eq!(a.cwd, "/work/proj");
-        assert_eq!(a.title, "first ask");
-        assert_eq!(a.last_prompt, "second ask");
-        assert_eq!(a.msg_count, 2);
-        assert_eq!(a.source, Source::Gemini);
-        let b = sessions.iter().find(|s| s.id == "b").unwrap();
-        assert_eq!(b.msg_count, 1);
+    fn parses_messages_from_top_level_lines() {
+        let content = "{\"sessionId\":\"abc-123\",\"startTime\":\"2026-06-15T13:00:00.000Z\",\"kind\":\"main\"}\n\
+{\"$set\":{\"messages\":[]}}\n\
+{\"type\":\"user\",\"content\":[{\"text\":\"<session_context>\\nsetup\"}]}\n\
+{\"type\":\"user\",\"content\":[{\"text\":\"what are we working on?\"}]}\n\
+{\"type\":\"gemini\",\"content\":[{\"text\":\"your project\"}]}\n\
+{\"type\":\"user\",\"content\":[{\"text\":\"ship it\"}]}\n";
+        let s = &parse_reader(Cursor::new(content), "/work/proj", 999, "/g/chats/s.jsonl")[0];
+        assert_eq!(s.id, "abc-123");
+        assert_eq!(s.cwd, "/work/proj");
+        assert_eq!(s.title, "what are we working on?"); // skips <session_context>
+        assert_eq!(s.last_prompt, "ship it");
+        assert_eq!(s.msg_count, 3); // context preamble excluded
+        assert!(s.started_at > 0);
     }
 
     #[test]
-    fn maps_project_key_to_directory() {
-        let mut map = HashMap::new();
-        map.insert("loopsy".to_string(), "/Users/x/loopsy".to_string());
-        // inverse of {"/Users/x/loopsy":"loopsy"}
-        assert_eq!(map.get("loopsy").unwrap(), "/Users/x/loopsy");
+    fn context_only_session_is_skipped() {
+        // A session whose only message is the injected context is not indexed.
+        let content = "{\"sessionId\":\"s3\",\"startTime\":\"2026-06-15T13:00:00.000Z\"}\n\
+{\"$set\":{\"messages\":[{\"id\":\"m1\",\"type\":\"user\",\"content\":[{\"text\":\"<session_context>\\nsetup\"}]}]}}\n";
+        assert!(parse_reader(Cursor::new(content), "/w", 0, "/f.jsonl").is_empty());
+    }
+
+    #[test]
+    fn parses_messages_from_set_snapshot() {
+        // The whole conversation lives in a $set.messages snapshot (no top-level
+        // type lines), deduped by message id.
+        let content = "{\"sessionId\":\"s2\",\"startTime\":\"2026-06-15T13:00:00.000Z\"}\n\
+{\"$set\":{\"messages\":[\
+{\"id\":\"m1\",\"type\":\"user\",\"content\":[{\"text\":\"fix the build\"}]},\
+{\"id\":\"m2\",\"type\":\"gemini\",\"content\":[{\"text\":\"done\"}]}]}}\n\
+{\"$set\":{\"messages\":[\
+{\"id\":\"m1\",\"type\":\"user\",\"content\":[{\"text\":\"fix the build\"}]},\
+{\"id\":\"m2\",\"type\":\"gemini\",\"content\":[{\"text\":\"done\"}]}]}}\n";
+        let s = &parse_reader(Cursor::new(content), "/w", 0, "/f.jsonl")[0];
+        assert_eq!(s.title, "fix the build");
+        assert_eq!(s.msg_count, 2, "deduped by id across the two snapshots");
+    }
+
+    #[test]
+    fn non_session_file_yields_nothing() {
+        assert!(parse_reader(Cursor::new("{\"foo\":1}\n"), "/w", 0, "/f.jsonl").is_empty());
     }
 }
