@@ -5,7 +5,7 @@
 // per-platform optional dependency and exec it with the same args.
 const { spawnSync } = require("node:child_process");
 
-const pkg = `termem-${process.platform}-${process.arch}`;
+const pkg = `termem-cli-${process.platform}-${process.arch}`;
 
 let binary;
 try {

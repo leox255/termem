@@ -28,7 +28,7 @@ for entry in "${targets[@]}"; do
     echo "skip $target (no $tarball)"
     continue
   fi
-  pkg="termem-$os-$cpu"
+  pkg="termem-cli-$os-$cpu"
   work="$(mktemp -d)"
   tar -xzf "$tarball" -C "$work"
   chmod +x "$work/termem"
@@ -62,7 +62,7 @@ cp "$ROOT/npm/termem/bin/termem.js" "$main/bin/termem.js"
 [ -f "$ROOT/README.md" ] && cp "$ROOT/README.md" "$main/README.md"
 cat >"$main/package.json" <<EOF
 {
-  "name": "termem",
+  "name": "termem-cli",
   "version": "$VERSION",
   "description": "Cross-agent terminal memory and session management: recall, search, and resume Claude Code, Codex, Gemini, opencode, and shell sessions by directory.",
   "license": "MIT",
@@ -77,6 +77,6 @@ $deps_json
   }
 }
 EOF
-echo "publishing termem@$VERSION"
+echo "publishing termem-cli@$VERSION"
 (cd "$main" && npm publish --access public)
 echo "done"
