@@ -51,8 +51,7 @@ impl App {
                 if needle.is_empty() {
                     return true;
                 }
-                let hay =
-                    format!("{} {} {}", s.title, s.cwd, s.first_prompt).to_lowercase();
+                let hay = format!("{} {} {}", s.title, s.cwd, s.first_prompt).to_lowercase();
                 fuzzy(&hay, &needle)
             })
             .map(|(i, _)| i)
@@ -129,13 +128,11 @@ impl App {
             ])
             .split(f.area());
 
-        let header = Paragraph::new(Line::from(vec![
-            Span::raw(format!(
-                "{} session(s) · {}",
-                self.filtered.len(),
-                self.cwd
-            )),
-        ]))
+        let header = Paragraph::new(Line::from(vec![Span::raw(format!(
+            "{} session(s) · {}",
+            self.filtered.len(),
+            self.cwd
+        ))]))
         .block(
             Block::default()
                 .borders(Borders::ALL)

@@ -39,7 +39,7 @@ fn collect_files(root: &Path, ext: &str, source: Source, out: &mut Vec<Candidate
             continue;
         }
         let path = entry.path();
-        if path.extension().map_or(false, |x| x == ext) {
+        if path.extension().is_some_and(|x| x == ext) {
             if let Ok(meta) = entry.metadata() {
                 out.push(Candidate {
                     path: path.to_path_buf(),
@@ -95,13 +95,13 @@ pub fn gather_candidates(roots: &ScanRoots) -> Vec<Candidate> {
     out
 }
 
+/// A parsed session plus the file stat info (mtime, size) to cache.
+pub type ScannedRow = (Session, i64, i64);
+
 /// Parse one candidate into zero or more normalized [`Session`]s, each with the
 /// stat info to cache. Claude/Codex yield at most one; a shell log yields one
 /// per directory it touched.
-pub fn parse_candidate(
-    c: &Candidate,
-    thread_map: &HashMap<String, String>,
-) -> Vec<(Session, i64, i64)> {
+pub fn parse_candidate(c: &Candidate, thread_map: &HashMap<String, String>) -> Vec<ScannedRow> {
     let sessions: Vec<Session> = match c.source {
         Source::Claude => claude::parse(&c.path, c.mtime_ms)
             .ok()

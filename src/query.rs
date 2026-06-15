@@ -39,7 +39,10 @@ fn like_prefix(cwd: &str) -> String {
 /// SQL fragment + bound args restricting rows to a directory scope.
 fn scope_clause(scope: Scope, cwd: &str) -> (String, Vec<Value>) {
     match scope {
-        Scope::Here => (" AND cwd = ?".to_string(), vec![Value::Text(cwd.to_string())]),
+        Scope::Here => (
+            " AND cwd = ?".to_string(),
+            vec![Value::Text(cwd.to_string())],
+        ),
         Scope::Subtree => (
             " AND (cwd = ? OR cwd LIKE ? ESCAPE '\\')".to_string(),
             vec![Value::Text(cwd.to_string()), Value::Text(like_prefix(cwd))],

@@ -18,7 +18,7 @@ impl Source {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Source> {
+    pub fn from_tag(s: &str) -> Option<Source> {
         match s {
             "claude" => Some(Source::Claude),
             "codex" => Some(Source::Codex),
@@ -63,7 +63,11 @@ pub fn rel_time(ms: i64) -> String {
 
 /// Collapse a free-text prompt into a one-line title.
 pub fn truncate_title(s: &str) -> String {
-    let line = s.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim();
+    let line = s
+        .lines()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or("")
+        .trim();
     let max = 72;
     if line.chars().count() <= max {
         line.to_string()

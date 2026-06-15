@@ -77,7 +77,11 @@ pub fn parse_reader<R: BufRead>(
 
     dirs.into_iter()
         .map(|(dir, a)| {
-            let started = if a.started == i64::MAX { mtime_ms } else { a.started };
+            let started = if a.started == i64::MAX {
+                mtime_ms
+            } else {
+                a.started
+            };
             let updated = if a.updated == 0 { mtime_ms } else { a.updated };
             Session {
                 id: id.clone(),
@@ -114,7 +118,7 @@ mod tests {
         assert_eq!(proj.title, "git status");
         assert_eq!(proj.last_prompt, "git commit");
         assert_eq!(proj.msg_count, 2);
-        assert_eq!(proj.started_at, 1718450000_000);
+        assert_eq!(proj.started_at, 1_718_450_000_000);
 
         let sub = sessions.iter().find(|s| s.cwd == "/work/proj/sub").unwrap();
         assert_eq!(sub.title, "cargo test");

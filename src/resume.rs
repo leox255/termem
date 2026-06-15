@@ -39,10 +39,7 @@ pub fn exec(s: &Session) -> anyhow::Error {
                 .exec();
             anyhow::anyhow!("failed to exec {cmd}: {err}")
         }
-        None => anyhow::anyhow!(
-            "shell sessions can't be resumed; cd to {} instead",
-            s.cwd
-        ),
+        None => anyhow::anyhow!("shell sessions can't be resumed; cd to {} instead", s.cwd),
     }
 }
 

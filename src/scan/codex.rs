@@ -291,12 +291,21 @@ mod tests {
     #[test]
     fn thread_name_wins_for_title() {
         let mut map = empty_map();
-        map.insert("019e8357-3f8f-77e0-95f5-64b20ece1e79".into(), "Nice Title".into());
+        map.insert(
+            "019e8357-3f8f-77e0-95f5-64b20ece1e79".into(),
+            "Nice Title".into(),
+        );
         let lines = r#"{"type":"session_meta","timestamp":"2026-06-01T13:20:08.918Z","payload":{"id":"019e8357-3f8f-77e0-95f5-64b20ece1e79","cwd":"/p"}}
 {"type":"event_msg","timestamp":"2026-06-01T13:20:11.000Z","payload":{"type":"user_message","message":"hello there"}}
 "#;
-        let s = parse_reader(Cursor::new(lines), "rollout-x".into(), "/f.jsonl".into(), 0, &map)
-            .unwrap();
+        let s = parse_reader(
+            Cursor::new(lines),
+            "rollout-x".into(),
+            "/f.jsonl".into(),
+            0,
+            &map,
+        )
+        .unwrap();
         assert_eq!(s.title, "Nice Title");
     }
 
