@@ -45,7 +45,10 @@ fn indexes_and_finds_this_build_session() {
     match me {
         Some(s) => {
             assert_eq!(s.source, Source::Claude);
-            assert_eq!(s.title, "Build terminal memory system for session management");
+            assert_eq!(
+                s.title,
+                "Build terminal memory system for session management"
+            );
             assert_eq!(s.cwd, "/Users/amosff/ai/apps/termem");
         }
         None => panic!(

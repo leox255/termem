@@ -5,7 +5,7 @@
 //! disappeared, so steady-state refreshes are near-instant.
 
 use crate::model::{Session, Source};
-use crate::scan::{self, ScanRoots};
+use crate::scan::{self, ScanRoots, ScannedRow};
 use anyhow::Result;
 use rayon::prelude::*;
 use rusqlite::{params, Connection};
@@ -116,7 +116,10 @@ impl Index {
             .conn
             .prepare("SELECT file_path, file_mtime, file_size FROM sessions GROUP BY file_path")?;
         let rows = stmt.query_map([], |r| {
-            Ok((r.get::<_, String>(0)?, (r.get::<_, i64>(1)?, r.get::<_, i64>(2)?)))
+            Ok((
+                r.get::<_, String>(0)?,
+                (r.get::<_, i64>(1)?, r.get::<_, i64>(2)?),
+            ))
         })?;
         let mut map = HashMap::new();
         for row in rows {
@@ -149,7 +152,7 @@ impl Index {
             .collect();
 
         // Re-parse changed files in parallel, keeping rows grouped by file.
-        let parsed: Vec<(String, Vec<(Session, i64, i64)>)> = changed
+        let parsed: Vec<(String, Vec<ScannedRow>)> = changed
             .par_iter()
             .map(|&c| {
                 (
@@ -241,7 +244,7 @@ pub fn row_to_session(r: &rusqlite::Row) -> rusqlite::Result<Session> {
     Ok(Session {
         file_path: r.get("file_path")?,
         id: r.get("id")?,
-        source: Source::from_str(&source_str).unwrap_or(Source::Shell),
+        source: Source::from_tag(&source_str).unwrap_or(Source::Shell),
         cwd: r.get("cwd")?,
         title: r.get("title")?,
         first_prompt: r.get("first_prompt")?,

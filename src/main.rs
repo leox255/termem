@@ -136,7 +136,14 @@ fn cmd_ls(a: LsArgs) -> Result<()> {
     let cwd = resolve_cwd(&a.scope.cwd)?;
     let scope = scope_of(&a.scope);
     let sources = sources_of(&a.scope.source);
-    let res = query::query(idx.conn(), &cwd, scope, &sources, a.search.as_deref(), a.limit)?;
+    let res = query::query(
+        idx.conn(),
+        &cwd,
+        scope,
+        &sources,
+        a.search.as_deref(),
+        a.limit,
+    )?;
     if a.json {
         println!("{}", serde_json::to_string_pretty(&res)?);
     } else {
@@ -265,7 +272,7 @@ fn sources_of(opt: &Option<String>) -> Vec<Source> {
     match opt {
         Some(s) => s
             .split(',')
-            .filter_map(|x| Source::from_str(x.trim()))
+            .filter_map(|x| Source::from_tag(x.trim()))
             .collect(),
         None => Vec::new(),
     }

@@ -5,10 +5,10 @@
 //! (Claude `ai-title`, Codex `thread_name`) or derived from the first user
 //! prompt. termem never calls an LLM.
 
-pub mod model;
-pub mod scan;
 pub mod index;
+pub mod model;
 pub mod query;
 pub mod resume;
+pub mod scan;
 pub mod shellhook;
 pub mod tui;
