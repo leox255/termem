@@ -20,3 +20,19 @@ jobs:
         run: cargo clippy --all-targets --all-features -- -D warnings
       - name: Test
         run: cargo test --all
+
+  windows:
+    runs-on: windows-latest
+    # Windows is not a supported target yet (Unix path assumptions, the shell
+    # hook is zsh/bash only). This job builds and tests on Windows to surface
+    # exactly what breaks, without blocking CI. Drop continue-on-error once
+    # it's green and Windows is a first-class target.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release --all-targets
+      - name: Test
+        run: cargo test --all
