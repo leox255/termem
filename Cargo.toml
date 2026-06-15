@@ -2,8 +2,21 @@
 name = "termem"
 version = "0.5.2"
 edition = "2021"
-description = "Terminal memory: index and resume Claude Code, Codex, and shell sessions by directory"
+description = "Cross-agent terminal memory and session management: recall, search, and resume Claude Code, Codex, Gemini, opencode, and shell sessions by directory."
 license = "MIT"
+repository = "https://github.com/leox255/termem"
+homepage = "https://github.com/leox255/termem"
+readme = "README.md"
+keywords = ["mcp", "memory", "sessions", "cli", "terminal"]
+categories = ["command-line-utilities"]
+include = [
+    "src/**/*",
+    "Cargo.toml",
+    "Cargo.lock",
+    "README.md",
+    "CHANGELOG.md",
+    "plugin/skills/termem/SKILL.md",
+]
 
 [[bin]]
 name = "termem"
