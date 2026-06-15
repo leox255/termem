@@ -32,9 +32,12 @@ pub(crate) fn escape_like(s: &str) -> String {
     out
 }
 
-/// `<cwd>/%` pattern matching descendants of `cwd`.
+/// `<cwd><sep>%` pattern matching descendants of `cwd`. The separator is `/`
+/// on Unix and `\` on Windows, escaped so it matches literally under
+/// `ESCAPE '\\'`.
 fn like_prefix(cwd: &str) -> String {
-    format!("{}/%", escape_like(cwd))
+    let sep = std::path::MAIN_SEPARATOR.to_string();
+    format!("{}{}%", escape_like(cwd), escape_like(&sep))
 }
 
 /// SQL fragment + bound args restricting rows to a directory scope.

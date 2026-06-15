@@ -297,7 +297,26 @@ fn resolve_cwd(opt: &Option<PathBuf>) -> Result<String> {
         None => std::env::current_dir()?,
     };
     let abs = std::fs::canonicalize(&p).unwrap_or(p);
-    Ok(abs.to_string_lossy().to_string())
+    Ok(normalize_path(&abs.to_string_lossy()))
+}
+
+/// Strip the Windows extended-length (`\\?\`) prefix that `canonicalize` adds,
+/// so the result prefix-matches the cwd stored in session data
+/// (e.g. `C:\Users\Vee`, not `\\?\C:\Users\Vee`). No-op off Windows.
+#[cfg(windows)]
+fn normalize_path(s: &str) -> String {
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{rest}")
+    } else if let Some(rest) = s.strip_prefix(r"\\?\") {
+        rest.to_string()
+    } else {
+        s.to_string()
+    }
+}
+
+#[cfg(not(windows))]
+fn normalize_path(s: &str) -> String {
+    s.to_string()
 }
 
 fn rel_path(child: &str, base: &str) -> String {
