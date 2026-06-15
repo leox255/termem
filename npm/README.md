@@ -3,8 +3,7 @@
 `npx @termem/cli` and `npm install -g @termem/cli` work via the esbuild-style
 "optional per-platform packages" pattern, so there is no Rust toolchain and no
 postinstall download script. The npm name is `@termem/cli` under the `termem`
-org (npm blocks the bare `termem`), but the installed command is still
-`termem`.
+org; the installed command is still `termem`.
 
 - `@termem/cli` (main): a tiny launcher (`termem/bin/termem.js`) plus
   `optionalDependencies` on the per-platform packages.

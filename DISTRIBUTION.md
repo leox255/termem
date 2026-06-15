@@ -83,10 +83,9 @@ so there is a one-time, token-free bootstrap (run locally):
 4. Cut a release (push a `v*` tag). The `npm` job publishes all five packages
    keylessly via OIDC.
 
-The npm package is `@termem/cli`, published under the `termem` org (the bare
-`termem` is blocked by npm's similarity filter, and scoped names are exempt).
-It still installs a plain `termem` command, so `npx @termem/cli`,
-`npm install -g @termem/cli` (gives `termem`), and MCP configs like
+The npm package is `@termem/cli`, published under the `termem` org. It installs
+a plain `termem` command, so `npx @termem/cli`, `npm install -g @termem/cli`
+(gives `termem`), and MCP configs like
 `{ "command": "npx", "args": ["-y", "@termem/cli", "mcp"] }` work on
 macOS/Linux.
 
