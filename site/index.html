@@ -79,6 +79,8 @@
     width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex:0 0 auto;transition:background .15s}
   .copy:hover{background:#30363d}
   .copy.copied{background:var(--term-green);border-color:var(--term-green);color:#0d1117}
+  .install-alt{margin-top:14px;font-size:13.5px;color:#8b949e;font-family:var(--mono)}
+  .install-alt code{color:#9aa4b2;background:rgba(110,118,129,.14);padding:1px 6px;border-radius:5px}
   .cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:28px}
   .btn{display:inline-flex;align-items:center;gap:8px;font-size:15px;font-weight:600;border-radius:10px;padding:11px 20px;border:1px solid transparent;cursor:pointer}
   .btn-primary{background:var(--teal);color:#06231f;border-color:transparent;box-shadow:0 6px 20px rgba(94,234,212,.25)}
@@ -294,6 +296,7 @@
         <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg>
       </button>
     </div>
+    <div class="install-alt">or <code>npm i -g @termem/cli</code> &middot; <code>cargo install termem</code></div>
 
     <div class="cta">
       <a class="btn btn-primary" href="#install">Get started</a>
