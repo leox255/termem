@@ -2,6 +2,17 @@
 
 All notable changes to termem are documented here.
 
+## [0.3.0] - 2026-06-15
+
+### Added
+- opencode support: reads the `session` table from
+  `~/.local/share/opencode/opencode.db` (directory, title, timestamps) and
+  resumes by id with `opencode --session <id>`.
+- Gemini support: reads `~/.gemini/tmp/<project>/logs.json` and attributes
+  sessions to directories via `projects.json`. Gemini has no resume-by-id, so
+  these are browse + reopen `gemini` in the directory.
+- Scan roots for both tools are configurable via `ScanRoots`.
+
 ## [0.2.0] - 2026-06-15
 
 ### Added
