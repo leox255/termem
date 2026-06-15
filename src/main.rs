@@ -196,21 +196,26 @@ fn cmd_tui(scope: ScopeArgs) -> Result<()> {
 }
 
 fn cmd_hint(a: HintArgs) -> Result<()> {
-    // Runs on every `cd`, so it reads the cached index without refreshing.
-    // It prints nothing when there are no sessions (or no index yet).
-    let idx = Index::open_default()?;
+    // Runs on every `cd`: read-only, never refreshes or migrates the cache, and
+    // prints nothing if the index is missing or empty.
+    let idx = match Index::open_cached() {
+        Ok(i) => i,
+        Err(_) => return Ok(()),
+    };
     let cwd = resolve_cwd(&a.cwd)?;
-    let res = query::query(idx.conn(), &cwd, Scope::Subtree, &[], None, 1000)?;
-    if res.is_empty() {
-        return Ok(());
+    let (claude, codex, shell) =
+        query::counts_by_source(idx.conn(), &cwd, Scope::Subtree).unwrap_or((0, 0, 0));
+    if let Some(line) = hint_line(claude, codex, shell) {
+        println!("{line}");
     }
-    let (mut claude, mut codex, mut shell) = (0, 0, 0);
-    for s in &res {
-        match s.source {
-            Source::Claude => claude += 1,
-            Source::Codex => codex += 1,
-            Source::Shell => shell += 1,
-        }
+    Ok(())
+}
+
+/// One-line summary from per-source counts, or `None` when there are none.
+fn hint_line(claude: i64, codex: i64, shell: i64) -> Option<String> {
+    let total = claude + codex + shell;
+    if total <= 0 {
+        return None;
     }
     let mut parts = Vec::new();
     if claude > 0 {
@@ -222,14 +227,13 @@ fn cmd_hint(a: HintArgs) -> Result<()> {
     if shell > 0 {
         parts.push(format!("{shell} shell"));
     }
-    let noun = if res.len() == 1 { "session" } else { "sessions" };
-    println!(
+    let noun = if total == 1 { "session" } else { "sessions" };
+    Some(format!(
         "termem: {} {} here ({}). run 'termem' to resume.",
-        res.len(),
+        total,
         noun,
         parts.join(", ")
-    );
-    Ok(())
+    ))
 }
 
 fn cmd_init(a: InitArgs) -> Result<()> {
@@ -319,4 +323,22 @@ fn print_table(sessions: &[Session], cwd: &str, scope: Scope) {
         }
     }
     println!("\nResume:  termem resume <id|text>    Pick interactively:  termem");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::hint_line;
+
+    #[test]
+    fn hint_line_formats() {
+        assert_eq!(hint_line(0, 0, 0), None);
+        assert_eq!(
+            hint_line(0, 0, 1).unwrap(),
+            "termem: 1 session here (1 shell). run 'termem' to resume."
+        );
+        assert_eq!(
+            hint_line(2, 1, 0).unwrap(),
+            "termem: 3 sessions here (2 claude, 1 codex). run 'termem' to resume."
+        );
+    }
 }

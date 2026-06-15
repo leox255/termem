@@ -34,6 +34,20 @@ impl Index {
         Index::open(&dir.join("index.db"))
     }
 
+    /// Open the existing index for a read-only query WITHOUT touching the schema
+    /// (no migration, no writes). The cd hint uses this so a passive `cd` never
+    /// rebuilds or mutates the cache.
+    pub fn open_cached() -> Result<Index> {
+        let dir = scan::home().join(".termem");
+        std::fs::create_dir_all(&dir)?;
+        let conn = Connection::open(dir.join("index.db"))?;
+        conn.busy_timeout(std::time::Duration::from_secs(3))?;
+        Ok(Index {
+            conn,
+            roots: ScanRoots::home(),
+        })
+    }
+
     /// Open with the standard `$HOME` session locations.
     pub fn open(path: &Path) -> Result<Index> {
         Index::open_with_roots(path, ScanRoots::home())
@@ -42,6 +56,9 @@ impl Index {
     /// Open with explicit scan roots (used for custom locations and tests).
     pub fn open_with_roots(path: &Path, roots: ScanRoots) -> Result<Index> {
         let conn = Connection::open(path)?;
+        // Set the busy timeout first so even the journal/sync pragmas wait on a
+        // transient lock instead of erroring under refresh contention.
+        conn.busy_timeout(std::time::Duration::from_secs(3))?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
         let mut index = Index { conn, roots };
@@ -58,13 +75,15 @@ impl Index {
             .conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap_or(0);
-        if version != SCHEMA_VERSION {
-            self.conn.execute_batch("DROP TABLE IF EXISTS sessions;")?;
+        if version == SCHEMA_VERSION {
+            return Ok(());
         }
+        // Fresh or outdated DB: (re)create the schema and stamp the version.
         // `key` is the primary key (one file can yield several sessions, e.g. a
         // shell log split per directory); `file_path` is the cache unit.
         self.conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS sessions (
+            "DROP TABLE IF EXISTS sessions;
+            CREATE TABLE sessions (
                 key         TEXT PRIMARY KEY,
                 file_path   TEXT NOT NULL,
                 id          TEXT NOT NULL,
@@ -129,29 +148,43 @@ impl Index {
             })
             .collect();
 
-        // Re-parse changed files in parallel (a file may yield several rows).
-        let parsed: Vec<(Session, i64, i64)> = changed
+        // Re-parse changed files in parallel, keeping rows grouped by file.
+        let parsed: Vec<(String, Vec<(Session, i64, i64)>)> = changed
             .par_iter()
-            .flat_map(|&c| scan::parse_candidate(c, &thread_map))
+            .map(|&c| {
+                (
+                    c.path.to_string_lossy().to_string(),
+                    scan::parse_candidate(c, &thread_map),
+                )
+            })
             .collect();
 
+        // Files that vanished from disk. Disjoint from `changed` (a subset of
+        // `present`), so the two delete passes never overlap.
         let to_delete: Vec<String> = existing
             .keys()
             .filter(|p| !present.contains(*p))
             .cloned()
             .collect();
 
+        let mut parsed_rows = 0usize;
         let tx = self.conn.transaction()?;
-        // Clear all rows for changed files first so stale per-directory rows
-        // (e.g. a shell log that no longer touches a directory) don't linger.
-        for c in &changed {
+        for (file_path, rows) in &parsed {
+            // A changed file that parsed to nothing is treated as transient
+            // (mid-write or briefly unreadable): keep its previous rows and
+            // retry next refresh, rather than wiping good data. Replacing only
+            // when we have rows also evicts stale per-directory shell rows.
+            if rows.is_empty() {
+                continue;
+            }
             tx.execute(
                 "DELETE FROM sessions WHERE file_path = ?1",
-                params![c.path.to_string_lossy().to_string()],
+                params![file_path],
             )?;
-        }
-        for (s, mtime, size) in &parsed {
-            upsert(&tx, s, *mtime, *size)?;
+            for (s, mtime, size) in rows {
+                upsert(&tx, s, *mtime, *size)?;
+                parsed_rows += 1;
+            }
         }
         for path in &to_delete {
             tx.execute("DELETE FROM sessions WHERE file_path = ?1", params![path])?;
@@ -159,7 +192,7 @@ impl Index {
         tx.commit()?;
 
         Ok(RefreshStats {
-            parsed: parsed.len(),
+            parsed: parsed_rows,
             deleted: to_delete.len(),
             total: candidates.len(),
         })
