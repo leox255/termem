@@ -153,6 +153,8 @@ impl App {
                 let icon = match s.source {
                     Source::Claude => "◆",
                     Source::Codex => "◇",
+                    Source::Gemini => "✦",
+                    Source::Opencode => "◈",
                     Source::Shell => "❯",
                 };
                 ListItem::new(Line::from(vec![
@@ -245,6 +247,8 @@ fn source_style(src: Source) -> Style {
     match src {
         Source::Claude => Style::new().fg(Color::Magenta),
         Source::Codex => Style::new().fg(Color::Green),
+        Source::Gemini => Style::new().fg(Color::Blue),
+        Source::Opencode => Style::new().fg(Color::Cyan),
         Source::Shell => Style::new().fg(Color::Yellow),
     }
 }

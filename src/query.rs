@@ -96,27 +96,21 @@ pub fn query(
     Ok(out)
 }
 
-/// Exact per-source counts in a directory scope, as `(claude, codex, shell)`.
-/// Uses a COUNT aggregate so it stays cheap and correct no matter how many
-/// sessions match (the cd hint calls this on every directory change).
-pub fn counts_by_source(conn: &Connection, cwd: &str, scope: Scope) -> Result<(i64, i64, i64)> {
+/// Per-source counts in a directory scope, as `(source_tag, count)` pairs. Uses
+/// a COUNT aggregate so it stays cheap and correct no matter how many sessions
+/// match (the cd hint calls this on every directory change).
+pub fn counts_by_source(conn: &Connection, cwd: &str, scope: Scope) -> Result<Vec<(String, i64)>> {
     let (scope_sql, args) = scope_clause(scope, cwd);
     let sql = format!("SELECT source, COUNT(*) FROM sessions WHERE 1=1{scope_sql} GROUP BY source");
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(rusqlite::params_from_iter(args.iter()), |r| {
         Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
     })?;
-    let (mut claude, mut codex, mut shell) = (0i64, 0i64, 0i64);
+    let mut out = Vec::new();
     for row in rows {
-        let (src, n) = row?;
-        match src.as_str() {
-            "claude" => claude = n,
-            "codex" => codex = n,
-            "shell" => shell = n,
-            _ => {}
-        }
+        out.push(row?);
     }
-    Ok((claude, codex, shell))
+    Ok(out)
 }
 
 /// Resolve a session for `resume`: exact id wins, then id prefix, then fuzzy
