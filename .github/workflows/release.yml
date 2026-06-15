@@ -23,7 +23,9 @@ jobs:
       matrix:
         include:
           - { os: macos-14, target: aarch64-apple-darwin }
-          - { os: macos-13, target: x86_64-apple-darwin }
+          # Cross-compile the Intel-mac binary on Apple Silicon: GitHub's
+          # Intel (macos-13) runners are scarce and can queue for hours.
+          - { os: macos-14, target: x86_64-apple-darwin }
           - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
           - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
     steps:
