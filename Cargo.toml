@@ -1,6 +1,6 @@
 [package]
 name = "termem"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 description = "Terminal memory: index and resume Claude Code, Codex, and shell sessions by directory"
 license = "MIT"
@@ -25,6 +25,9 @@ rayon = "1.10"
 anyhow = "1"
 dirs = "5"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+
+[dev-dependencies]
+serde_json = "1"
 
 [profile.release]
 opt-level = 3
