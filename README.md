@@ -14,17 +14,17 @@ Run `termem` in a project folder to get a list of every session that started the
 
 ## Install
 
-With a Rust toolchain (https://rustup.rs):
-
-```
-cargo install termem
-```
-
-Or with Node, no Rust required:
+With Node, no Rust required:
 
 ```
 npx @termem/cli              # run it directly
 npm install -g @termem/cli   # or install the `termem` command
+```
+
+Or with a Rust toolchain (https://rustup.rs):
+
+```
+cargo install termem
 ```
 
 Or download a prebuilt macOS / Linux binary from the [releases page](https://github.com/leox255/termem/releases), extract it, and put `termem` on your `PATH`.

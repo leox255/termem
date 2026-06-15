@@ -3,10 +3,11 @@
 This plugin bundles the termem skill and registers the termem MCP server
 (`recall`, `search`, `get_session`, `save_summary`, `stats`).
 
-It requires the `termem` binary on your `PATH`. Install it first:
+It requires the `termem` binary on your `PATH`. Install it first (no Rust required):
 
 ```
-cargo install --git https://github.com/leox255/termem
+npm install -g @termem/cli
+# or: cargo install termem
 ```
 
 (or download a release binary from
