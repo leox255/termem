@@ -66,6 +66,9 @@ eval "$(termem init zsh)"
 
 # ~/.bashrc
 eval "$(termem init bash)"
+
+# PowerShell ($PROFILE)
+Invoke-Expression (& termem init powershell | Out-String)
 ```
 
 `tm` opens the picker. `tmr <query>` resumes the best match without the picker. Set `TERMEM_NO_HINT=1` to turn off the message on `cd`.

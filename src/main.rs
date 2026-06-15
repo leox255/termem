@@ -28,7 +28,7 @@ enum Cmd {
     Resume(ResumeArgs),
     /// Open the interactive picker (this is also the default with no subcommand).
     Tui(TuiArgs),
-    /// Emit shell integration (zsh, bash) or an agent wrapper (claude, codex, ...).
+    /// Emit shell integration (zsh, bash, powershell) or an agent wrapper (claude, codex, ...).
     Init(InitArgs),
     /// Run the memory MCP server over stdio (`claude mcp add termem -- termem mcp`).
     Mcp,
@@ -262,7 +262,7 @@ fn cmd_init(a: InitArgs) -> Result<()> {
         return Ok(());
     }
     eprintln!(
-        "Unknown init target '{}'.\n  shells: zsh, bash\n  agents: {}",
+        "Unknown init target '{}'.\n  shells: zsh, bash, powershell\n  agents: {}",
         target,
         wrappers::known_agents().join(", ")
     );
