@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>termem — cross-agent memory for your terminal</title>
+<meta name="description" content="termem indexes every Claude Code, Codex, Gemini, opencode, and shell session by the directory it ran in, so you can recall, search, and resume them. Shared memory via MCP, no model calls." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231f2328'/%3E%3Cpath d='M9 11l5 5-5 5' fill='none' stroke='%233fb950' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3Crect x='16.5' y='19.4' width='7' height='2.4' rx='1.2' fill='%233fb950'/%3E%3C/svg%3E" />
+<style>
+  :root{
+    --ghbg:#ffffff; --canvas:#f6f8fa; --border:#d1d9e0; --border-muted:#d8dee4;
+    --fg:#1f2328; --muted:#59636e; --blue:#0969da; --green:#1f883d; --green-hover:#1a7f37;
+    --chip-bg:#ddf4ff; --chip-fg:#0969da;
+    --term-bg:#0d1117; --term-bar:#161b22; --term-fg:#e6edf3; --term-muted:#8b949e;
+    --term-green:#3fb950; --term-cyan:#56d4dd; --term-blue:#58a6ff; --term-yellow:#e3b341;
+    --term-border:#30363d;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;font-family:var(--sans);color:var(--fg);background:var(--ghbg);line-height:1.5;-webkit-font-smoothing:antialiased}
+  a{color:var(--blue);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:1280px;margin:0 auto;padding:0 24px}
+
+  /* ---------- top nav ---------- */
+  .nav{display:flex;align-items:center;justify-content:space-between;padding:16px 24px;max-width:1280px;margin:0 auto}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:600;font-size:16px;color:var(--fg)}
+  .brand svg{display:block}
+  .nav-right{display:flex;align-items:center;gap:18px;font-size:14px}
+  .nav-right a{color:var(--muted);font-weight:500}
+  .nav-right a:hover{color:var(--fg);text-decoration:none}
+  .nav-ghbtn{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border);border-radius:8px;padding:5px 12px;color:var(--fg)!important;font-weight:600;background:var(--ghbg)}
+  .nav-ghbtn:hover{background:var(--canvas);text-decoration:none}
+
+  /* ---------- hero ---------- */
+  .hero{position:relative;text-align:center;padding:64px 24px 76px;overflow:hidden}
+  .hero::before{content:"";position:absolute;inset:0;z-index:0;
+    background-image:radial-gradient(circle at center, rgba(31,35,40,.05) 1px, transparent 1px);
+    background-size:22px 22px;
+    -webkit-mask-image:radial-gradient(ellipse 70% 80% at 50% 30%, #000 40%, transparent 78%);
+            mask-image:radial-gradient(ellipse 70% 80% at 50% 30%, #000 40%, transparent 78%);}
+  .hero::after{content:"";position:absolute;left:50%;top:-180px;transform:translateX(-50%);
+    width:760px;height:420px;z-index:0;border-radius:50%;
+    background:radial-gradient(closest-side, rgba(63,185,80,.16), rgba(88,166,255,.10) 55%, transparent 75%);filter:blur(8px)}
+  .hero > *{position:relative;z-index:1}
+  .hero-logo{margin:0 auto 22px;width:72px;height:72px;border-radius:18px;display:flex;align-items:center;justify-content:center;
+    background:#1f2328;box-shadow:0 8px 28px rgba(31,35,40,.20)}
+  .wordmark{font-size:clamp(44px,8vw,72px);font-weight:800;letter-spacing:-.04em;margin:0;color:var(--fg)}
+  .tagline{font-size:clamp(17px,2.4vw,22px);color:var(--muted);max-width:620px;margin:14px auto 0;font-weight:400}
+  .tagline b{color:var(--fg);font-weight:600}
+  .install{display:inline-flex;align-items:center;gap:12px;margin:34px auto 0;background:var(--term-bg);border:1px solid var(--term-border);
+    border-radius:10px;padding:11px 12px 11px 16px;font-family:var(--mono);font-size:14.5px;color:var(--term-fg);box-shadow:0 6px 22px rgba(13,17,23,.16);max-width:calc(100vw - 48px)}
+  .install .dollar{color:var(--term-green);user-select:none}
+  .install code{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .copy{appearance:none;border:1px solid var(--term-border);background:#21262d;color:var(--term-fg);border-radius:7px;
+    width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex:0 0 auto;transition:background .15s}
+  .copy:hover{background:#30363d}
+  .copy.copied{background:var(--term-green);border-color:var(--term-green);color:#0d1117}
+  .cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:28px}
+  .btn{display:inline-flex;align-items:center;gap:8px;font-size:15px;font-weight:600;border-radius:10px;padding:11px 20px;border:1px solid transparent;cursor:pointer}
+  .btn-primary{background:var(--green);color:#fff;border-color:rgba(31,35,40,.15)}
+  .btn-primary:hover{background:var(--green-hover);text-decoration:none}
+  .btn-secondary{background:var(--ghbg);color:var(--fg);border-color:var(--border)}
+  .btn-secondary:hover{background:var(--canvas);text-decoration:none}
+  .badges{margin-top:26px;display:flex;gap:18px;justify-content:center;flex-wrap:wrap;color:var(--muted);font-size:13px}
+  .badges span{display:inline-flex;align-items:center;gap:6px}
+  .badges .dot{width:7px;height:7px;border-radius:50%;background:var(--term-green)}
+
+  /* ---------- repo body (github-style) ---------- */
+  .repo-divider{border:0;border-top:1px solid var(--border);margin:0}
+  .layout{display:grid;grid-template-columns:minmax(0,1fr) 296px;gap:24px;padding:24px 0 64px}
+  @media (max-width:1011px){.layout{grid-template-columns:1fr}.aside{order:-1}}
+
+  /* commit bar + terminal container */
+  .box{border:1px solid var(--border);border-radius:6px;overflow:hidden;background:var(--ghbg)}
+  .commitbar{display:flex;align-items:center;gap:10px;padding:10px 16px;background:var(--canvas);border-bottom:1px solid var(--border);font-size:14px;color:var(--muted);flex-wrap:wrap}
+  .commitbar .av{width:20px;height:20px;border-radius:50%;flex:0 0 auto}
+  .commitbar .who{color:var(--fg);font-weight:600}
+  .commitbar .msg{color:var(--fg)}
+  .commitbar .right{margin-left:auto;display:flex;align-items:center;gap:8px;white-space:nowrap}
+  .commitbar .sha{font-family:var(--mono);font-size:12px;color:var(--muted)}
+  .commitbar .commits{display:inline-flex;align-items:center;gap:6px;color:var(--muted)}
+
+  /* terminal */
+  .term{background:var(--term-bg);font-family:var(--mono)}
+  .term-bar{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--term-bar);border-bottom:1px solid var(--term-border)}
+  .lights{display:flex;gap:7px}
+  .lights i{width:12px;height:12px;border-radius:50%;display:block}
+  .lights .r{background:#ff5f56}.lights .y{background:#ffbd2e}.lights .g{background:#27c93f}
+  .term-title{flex:1;text-align:center;color:var(--term-muted);font-size:12.5px;letter-spacing:.02em;margin-right:46px}
+  .replay{appearance:none;border:0;background:transparent;color:var(--term-muted);cursor:pointer;font-size:12px;display:inline-flex;align-items:center;gap:5px;padding:4px 6px;border-radius:6px}
+  .replay:hover{color:var(--term-fg);background:rgba(255,255,255,.06)}
+  .term-body{padding:18px 20px;min-height:360px;font-size:13.5px;line-height:1.7;color:var(--term-fg);white-space:pre-wrap;word-break:break-word;overflow:auto;max-height:460px}
+  .term-body .line{min-height:1.7em}
+  .p-path{color:var(--term-cyan)}
+  .p-caret{color:var(--term-green);font-weight:700}
+  .cmd-txt{color:var(--term-fg)}
+  .cursor{display:inline-block;width:8px;height:1.05em;background:var(--term-fg);vertical-align:-2px;margin-left:1px;animation:blink 1.1s steps(1) infinite}
+  @keyframes blink{50%{opacity:0}}
+  .hint{color:var(--term-muted)}
+  .hint b{color:var(--term-fg);font-weight:600}
+  .kbd{color:var(--term-yellow)}
+  .thead{color:var(--term-muted)}
+  .arr{color:var(--term-green)}
+  .t-claude{color:var(--term-yellow)}
+  .t-codex{color:var(--term-blue)}
+  .t-shell{color:var(--term-cyan)}
+  .dim{color:var(--term-muted)}
+  .ok{color:var(--term-green)}
+  .box-line{color:var(--term-muted)}
+
+  /* readme card */
+  .readme{border:1px solid var(--border);border-radius:6px;margin-top:24px;background:var(--ghbg)}
+  .readme-tabs{display:flex;align-items:center;gap:10px;padding:8px 16px;border-bottom:1px solid var(--border)}
+  .readme-tab{display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:600;color:var(--fg);padding:8px 4px;border-bottom:2px solid #fd8c73;margin-bottom:-9px}
+  .md{padding:24px 28px 36px;font-size:16px;color:var(--fg)}
+  .md h1,.md h2{margin:24px 0 16px;padding-bottom:.3em;border-bottom:1px solid var(--border-muted);font-weight:600;line-height:1.25}
+  .md h1{font-size:2em;margin-top:0}
+  .md h2{font-size:1.5em}
+  .md p{margin:0 0 16px}
+  .md ul{margin:0 0 16px;padding-left:2em}
+  .md li{margin:.3em 0}
+  .md strong{font-weight:600}
+  .md code{font-family:var(--mono);font-size:85%;background:rgba(129,139,152,.18);padding:.2em .4em;border-radius:6px}
+  .md pre{background:var(--canvas);padding:16px;border-radius:6px;overflow:auto;line-height:1.45;margin:0 0 16px}
+  .md pre code{background:none;padding:0;font-size:13.5px;color:var(--fg)}
+  .md .lead{font-weight:600;font-size:1.05em}
+
+  /* aside */
+  .aside h2{font-size:16px;font-weight:600;margin:0 0 8px}
+  .aside section{padding:16px 0;border-bottom:1px solid var(--border-muted)}
+  .aside section:first-child{padding-top:0}
+  .aside .about-head{display:flex;align-items:center;justify-content:space-between}
+  .aside p.desc{font-size:14px;color:var(--fg);margin:8px 0 14px}
+  .topics{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+  .topic{background:var(--chip-bg);color:var(--chip-fg);font-size:12px;font-weight:500;padding:3px 10px;border-radius:999px;cursor:pointer}
+  .topic:hover{background:#b6e3ff;text-decoration:none}
+  .meta-row{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--muted);padding:5px 0}
+  .meta-row a{color:var(--muted);font-weight:500}
+  .meta-row a:hover{color:var(--blue)}
+  .meta-row b{color:var(--fg);font-weight:600}
+  .icon{flex:0 0 auto;fill:var(--muted)}
+  .muted-note{font-size:14px;color:var(--muted);margin:6px 0 0}
+  .contribs{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+  .contrib{display:flex;align-items:center;gap:8px;font-size:14px}
+  .contrib .av{width:32px;height:32px;border-radius:50%;flex:0 0 auto}
+  .contrib .nm{font-weight:600;color:var(--fg)}
+  .contrib .full{color:var(--muted)}
+  .langbar{display:flex;height:8px;border-radius:6px;overflow:hidden;margin:12px 0 12px}
+  .langbar i{display:block;height:100%}
+  .langlegend{display:flex;flex-wrap:wrap;gap:14px;font-size:13px;color:var(--muted)}
+  .langlegend span{display:inline-flex;align-items:center;gap:6px}
+  .lg-dot{width:9px;height:9px;border-radius:50%}
+  .langlegend b{color:var(--fg);font-weight:600}
+
+  footer{border-top:1px solid var(--border);padding:28px 0 48px;color:var(--muted);font-size:13px}
+  footer .wrap{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:center}
+  footer a{color:var(--muted)}
+
+  @media (prefers-reduced-motion: reduce){.cursor{animation:none}}
+</style>
+</head>
+<body>
+
+<!-- top nav -->
+<nav class="nav">
+  <a class="brand" href="#">
+    <svg width="26" height="26" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#1f2328"/><path d="M9 11l5 5-5 5" fill="none" stroke="#3fb950" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><rect x="16.5" y="19.4" width="7" height="2.4" rx="1.2" fill="#3fb950"/></svg>
+    termem
+  </a>
+  <div class="nav-right">
+    <a href="#readme">Docs</a>
+    <a href="#install">Install</a>
+    <a class="nav-ghbtn" href="https://github.com/leox255/termem">
+      <svg height="16" width="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      GitHub
+    </a>
+  </div>
+</nav>
+
+<!-- hero -->
+<header class="hero">
+  <div class="hero-logo">
+    <svg width="40" height="40" viewBox="0 0 32 32"><path d="M9 10l6 6-6 6" fill="none" stroke="#3fb950" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><rect x="16.5" y="20" width="8" height="2.6" rx="1.3" fill="#3fb950"/></svg>
+  </div>
+  <h1 class="wordmark">termem</h1>
+  <p class="tagline">Cross-agent <b>memory</b> and <b>session management</b> for your terminal — recall, search, and resume the work every agent left behind.</p>
+
+  <div class="install" id="install">
+    <span class="dollar">$</span>
+    <code id="install-cmd">cargo install --git https://github.com/leox255/termem</code>
+    <button class="copy" id="copy-btn" aria-label="Copy install command" title="Copy">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg>
+    </button>
+  </div>
+
+  <div class="cta">
+    <a class="btn btn-primary" href="#install">Get started</a>
+    <a class="btn btn-secondary" href="https://github.com/leox255/termem">
+      <svg height="16" width="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      View on GitHub
+    </a>
+  </div>
+
+  <div class="badges">
+    <span><span class="dot"></span> No model calls, no network requests</span>
+    <span><span class="dot" style="background:#dea584"></span> Written in Rust</span>
+    <span><span class="dot" style="background:#58a6ff"></span> MIT licensed</span>
+  </div>
+</header>
+
+<hr class="repo-divider" />
+
+<!-- repo body -->
+<main class="wrap layout">
+  <!-- main column -->
+  <div class="main">
+    <div class="box">
+      <div class="commitbar">
+        <svg class="av" viewBox="0 0 32 32"><rect width="32" height="32" rx="16" fill="#1f2328"/><path d="M9 11l5 5-5 5" fill="none" stroke="#3fb950" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><rect x="16.5" y="19.4" width="7" height="2.4" rx="1.2" fill="#3fb950"/></svg>
+        <span class="who">leox255</span> <span>and</span> <span class="who">claude</span>
+        <span class="msg">Polish the interactive picker: wordmark + restyle (v0.5.1)</span>
+        <span class="right"><span class="sha">f2c14b2</span>
+          <span class="commits">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M11.93 8.5a4.002 4.002 0 0 1-7.86 0H.75a.75.75 0 0 1 0-1.5h3.32a4.002 4.002 0 0 1 7.86 0h3.32a.75.75 0 0 1 0 1.5Zm-1.43-.75a2.5 2.5 0 1 0-5 0 2.5 2.5 0 0 0 5 0Z"/></svg>
+            13 Commits</span>
+        </span>
+      </div>
+
+      <!-- terminal demo replaces the file list -->
+      <div class="term">
+        <div class="term-bar">
+          <span class="lights"><i class="r"></i><i class="y"></i><i class="g"></i></span>
+          <span class="term-title">termem — zsh — 96×24</span>
+          <button class="replay" id="replay" title="Replay">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M8 3a5 5 0 1 0 4.546 2.914.75.75 0 0 1 1.357-.638A6.5 6.5 0 1 1 8 1.5h.5V.81a.4.4 0 0 1 .66-.304l1.643 1.39a.4.4 0 0 1 0 .61L9.16 3.894a.4.4 0 0 1-.66-.305V3H8Z"/></svg>
+            replay
+          </button>
+        </div>
+        <div class="term-body" id="term-body" aria-label="Animated demo of termem commands"></div>
+      </div>
+    </div>
+
+    <!-- README -->
+    <div class="readme" id="readme">
+      <div class="readme-tabs">
+        <span class="readme-tab">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M0 1.75A.75.75 0 0 1 .75 1h4.253c1.227 0 2.317.59 3 1.501A3.743 3.743 0 0 1 11.006 1h4.245a.75.75 0 0 1 .75.75v10.5a.75.75 0 0 1-.75.75h-4.507a2.25 2.25 0 0 0-1.591.659l-.622.621a.75.75 0 0 1-1.06 0l-.622-.621A2.25 2.25 0 0 0 5.258 13H.75a.75.75 0 0 1-.75-.75Zm7.251 10.324.004-5.073-.002-2.253A2.25 2.25 0 0 0 5.003 2.5H1.5v9h3.757a3.75 3.75 0 0 1 1.994.574ZM8.755 4.75l-.004 7.322a3.752 3.752 0 0 1 1.992-.572H14.5v-9h-3.495a2.25 2.25 0 0 0-2.25 2.25Z"/></svg>
+          README
+        </span>
+      </div>
+      <div class="md">
+        <h1>termem</h1>
+        <p class="lead">Cross-agent memory and session management for your terminal.</p>
+        <p>Coding agents forget everything between sessions, and none of them can see what the others did. termem is the shared memory layer underneath them all. It indexes every Claude Code, Codex, Gemini, opencode, and shell session by the directory it ran in, so you can:</p>
+        <ul>
+          <li><strong>Recall</strong> prior work in a directory through the MCP server. An agent reads what happened there before, even sessions a different agent created, and picks up where you left off.</li>
+          <li><strong>Resume</strong> the exact past session in the right tool and directory.</li>
+          <li><strong>Search</strong> across everything by message content, not just titles.</li>
+        </ul>
+        <p>termem never calls a model and never makes a network request. Your agents do the reasoning; termem does the retrieval and storage.</p>
+
+        <h2 id="install-section">Install</h2>
+        <p>You need a Rust toolchain. Get one at <a href="https://rustup.rs">rustup.rs</a>. Then install from GitHub:</p>
+        <pre><code>cargo install --git https://github.com/leox255/termem</code></pre>
+
+        <h2>Use</h2>
+        <pre><code>termem                       open the picker for the current directory and subfolders
+termem --here                only sessions started exactly here
+termem --all                 every session, any directory
+termem ls                    print a table instead of opening the picker
+termem ls --source codex     filter by tool: claude, codex, opencode, gemini, shell
+termem ls -s "query"         search message content, title, prompt, and path
+termem resume &lt;id|text&gt;      resume the best match
+termem index                 rebuild the index now</code></pre>
+        <p>In the picker: type to filter, arrow keys to move, Enter to resume, Esc to quit.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- sidebar -->
+  <aside class="aside">
+    <section>
+      <div class="about-head">
+        <h2>About</h2>
+        <svg class="icon" width="16" height="16" viewBox="0 0 16 16"><path d="M8 0a8.2 8.2 0 0 1 .701.031C9.444.095 9.99.645 10.16 1.29l.288 1.107c.018.066.079.158.212.224.231.114.454.243.668.386.123.082.233.09.299.071l1.103-.303c.644-.176 1.392.021 1.82.63.27.385.506.792.704 1.218.315.675.111 1.422-.364 1.891l-.814.806c-.049.048-.098.147-.088.294.016.257.016.515 0 .772-.01.147.038.246.088.294l.814.806c.475.469.679 1.216.364 1.891a7.977 7.977 0 0 1-.704 1.217c-.428.61-1.176.807-1.82.63l-1.103-.303c-.066-.019-.176-.011-.299.071a4.909 4.909 0 0 1-.668.386c-.133.066-.194.158-.212.224l-.288 1.107c-.17.645-.716 1.195-1.459 1.259a8.006 8.006 0 0 1-1.402 0c-.743-.064-1.289-.614-1.459-1.259l-.288-1.107c-.018-.066-.079-.158-.212-.224a4.946 4.946 0 0 1-.668-.386c-.123-.082-.233-.09-.299-.071l-1.103.303c-.644.176-1.392-.021-1.82-.63a8.12 8.12 0 0 1-.704-1.218c-.315-.675-.111-1.422.363-1.891l.815-.806c.05-.048.098-.147.088-.294a6.214 6.214 0 0 1 0-.772c.01-.147-.038-.246-.088-.294l-.815-.806C.635 6.045.431 5.298.746 4.623a7.92 7.92 0 0 1 .704-1.217c.428-.61 1.176-.807 1.82-.63l1.103.303c.066.019.176.011.299-.071.214-.143.437-.272.668-.386.133-.066.194-.158.212-.224l.288-1.107C7.01.645 7.556.095 8.299.031A8.2 8.2 0 0 1 8 0Zm0 5a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z" fill="currentColor"/></svg>
+      </div>
+      <p class="desc">Cross-agent memory and session manager for the terminal. Recall, search, and resume Claude Code / Codex / Gemini / opencode / shell sessions. Shared memory via MCP, no model calls.</p>
+      <div class="topics">
+        <a class="topic">rust</a><a class="topic">cli</a><a class="topic">terminal</a><a class="topic">memory</a>
+        <a class="topic">mcp</a><a class="topic">codex</a><a class="topic">ai-agents</a><a class="topic">claude-code</a>
+      </div>
+      <div class="meta-row">
+        <svg class="icon" width="16" height="16" viewBox="0 0 16 16"><path d="M0 1.75A.75.75 0 0 1 .75 1h4.253c1.227 0 2.317.59 3 1.501A3.743 3.743 0 0 1 11.006 1h4.245a.75.75 0 0 1 .75.75v10.5a.75.75 0 0 1-.75.75h-4.507a2.25 2.25 0 0 0-1.591.659l-.622.621a.75.75 0 0 1-1.06 0l-.622-.621A2.25 2.25 0 0 0 5.258 13H.75a.75.75 0 0 1-.75-.75Zm8.755 3a2.25 2.25 0 0 1 2.25-2.25H14.5v9h-3.757a3.75 3.75 0 0 0-1.988.572Z"/></svg>
+        <a href="#readme">Readme</a>
+      </div>
+      <div class="meta-row">
+        <svg class="icon" width="16" height="16" viewBox="0 0 16 16"><path d="M6 2c.306 0 .582.187.696.471L10 10.731l1.304-3.26A.75.75 0 0 1 12 7h3.25a.75.75 0 0 1 0 1.5h-2.742l-1.812 4.528a.751.751 0 0 1-1.392 0L6 4.77 4.696 8.03A.75.75 0 0 1 4 8.5H.75a.75.75 0 0 1 0-1.5h2.742l1.812-4.529A.751.751 0 0 1 6 2Z"/></svg>
+        <a href="#">Activity</a>
+      </div>
+      <div class="meta-row">
+        <svg class="icon" width="16" height="16" viewBox="0 0 16 16"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+        <b>0</b>&nbsp;stars
+      </div>
+      <div class="meta-row">
+        <svg class="icon" width="16" height="16" viewBox="0 0 16 16"><path d="M8 2c1.981 0 3.671.992 4.933 2.078 1.27 1.091 2.187 2.345 2.637 3.023a1.62 1.62 0 0 1 0 1.798c-.45.678-1.367 1.932-2.637 3.023C11.67 13.008 9.981 14 8 14c-1.981 0-3.671-.992-4.933-2.078C1.797 10.83.88 9.576.43 8.898a1.62 1.62 0 0 1 0-1.798c.45-.677 1.367-1.931 2.637-3.022C4.33 2.992 6.019 2 8 2Zm0 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm0 1.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5Z"/></svg>
+        <b>0</b>&nbsp;watching
+      </div>
+      <div class="meta-row">
+        <svg class="icon" width="16" height="16" viewBox="0 0 16 16"><path d="M5 5.372v.878c0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75v-.878a2.25 2.25 0 1 1 1.5 0v.878a2.25 2.25 0 0 1-2.25 2.25h-1.5v2.128a2.251 2.251 0 1 1-1.5 0V8.5h-1.5A2.25 2.25 0 0 1 3.5 6.25v-.878a2.25 2.25 0 1 1 1.5 0ZM5 3.25a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Zm6.75.75a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm-3 8.75a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Z"/></svg>
+        <b>0</b>&nbsp;forks
+      </div>
+    </section>
+
+    <section>
+      <h2>Releases</h2>
+      <p class="muted-note">v0.5.1 — latest</p>
+      <p class="muted-note"><a href="https://github.com/leox255/termem/releases">5 releases</a></p>
+    </section>
+
+    <section>
+      <h2>Contributors&nbsp;<span style="color:var(--muted);font-weight:400">2</span></h2>
+      <div class="contribs">
+        <div class="contrib">
+          <svg class="av" viewBox="0 0 32 32"><rect width="32" height="32" rx="16" fill="#d97757"/><g stroke="#fff" stroke-width="1.6" stroke-linecap="round"><path d="M16 8v16M8 16h16M10.3 10.3l11.4 11.4M21.7 10.3 10.3 21.7"/></g></svg>
+          <span class="nm">claude</span><span class="full">Claude</span>
+        </div>
+        <div class="contrib">
+          <svg class="av" viewBox="0 0 32 32"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3fb950"/><stop offset="1" stop-color="#0969da"/></linearGradient></defs><rect width="32" height="32" rx="16" fill="url(#lg)"/><text x="16" y="21" text-anchor="middle" font-family="monospace" font-size="14" font-weight="700" fill="#fff">L</text></svg>
+          <span class="nm">leox255</span><span class="full">Leo A.</span>
+        </div>
+      </div>
+    </section>
+
+    <section style="border-bottom:0">
+      <h2>Languages</h2>
+      <div class="langbar">
+        <i style="width:96.4%;background:#dea584"></i>
+        <i style="width:3.6%;background:#89e051"></i>
+      </div>
+      <div class="langlegend">
+        <span><span class="lg-dot" style="background:#dea584"></span><b>Rust</b> 96.4%</span>
+        <span><span class="lg-dot" style="background:#89e051"></span><b>Shell</b> 3.6%</span>
+      </div>
+    </section>
+  </aside>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>termem · MIT licensed · indexes your sessions locally, sends nothing anywhere.</span>
+    <span><a href="https://github.com/leox255/termem">github.com/leox255/termem</a></span>
+  </div>
+</footer>
+
+<script>
+(function(){
+  // ----- copy install command -----
+  var copyBtn = document.getElementById('copy-btn');
+  copyBtn.addEventListener('click', function(){
+    var txt = document.getElementById('install-cmd').textContent.trim();
+    navigator.clipboard && navigator.clipboard.writeText(txt);
+    copyBtn.classList.add('copied');
+    copyBtn.innerHTML = '<svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L1.72 8.78a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"/></svg>';
+    setTimeout(function(){
+      copyBtn.classList.remove('copied');
+      copyBtn.innerHTML = '<svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg>';
+    }, 1600);
+  });
+
+  // ----- terminal demo -----
+  var body = document.getElementById('term-body');
+  var replayBtn = document.getElementById('replay');
+  var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // each step: a command (with its cwd) followed by output lines (raw HTML).
+  var SEQ = [
+    { cwd:'~', cmd:'cd payments-api' },
+    { out:['<span class="hint">↳ termem · 7 sessions here — <b>4 claude</b> · <b>2 codex</b> · <b>1 shell</b>. run <span class="kbd">tm</span> to browse.</span>'] },
+    { gap:true },
+    { cwd:'~/payments-api', cmd:'termem ls -s "stripe webhook"' },
+    { out:[
+      '<span class="thead">TITLE                            TOOL     AGE   MSGS</span>',
+      '<span class="arr">▸</span> Fix Stripe webhook 400         <span class="t-claude">claude</span>   <span class="dim">2d</span>    <span class="dim">142</span>',
+      '<span class="arr">▸</span> Verify webhook signatures      <span class="t-codex">codex</span>    <span class="dim">5d</span>     <span class="dim">63</span>',
+      '<span class="arr">▸</span> Webhook retry backoff          <span class="t-shell">shell</span>    <span class="dim">1w</span>      <span class="dim">—</span>'
+    ] },
+    { gap:true },
+    { cwd:'~/payments-api', cmd:'termem resume "stripe webhook"' },
+    { out:[
+      '<span class="dim">↳ best match: Fix Stripe webhook 400 (claude · 2d ago · 142 msgs)</span>',
+      '<span class="ok">↳ reopening in claude · ~/payments-api</span>'
+    ] }
+  ];
+
+  var TYPE_MS = 34, LINE_MS = 130, AFTER_CMD = 360, LOOP_PAUSE = 3200;
+  var timers = [];
+  function clearTimers(){ timers.forEach(clearTimeout); timers = []; }
+  function wait(ms){ return new Promise(function(res){ timers.push(setTimeout(res, ms)); }); }
+
+  function promptHTML(cwd){
+    return '<span class="p-path">'+cwd+'</span> <span class="p-caret">❯</span> ';
+  }
+  function newLine(html){
+    var d = document.createElement('div');
+    d.className = 'line';
+    d.innerHTML = html || '';
+    body.appendChild(d);
+    body.scrollTop = body.scrollHeight;
+    return d;
+  }
+
+  async function typeCmd(cwd, cmd){
+    var line = newLine(promptHTML(cwd));
+    var cursor = document.createElement('span');
+    cursor.className = 'cursor';
+    line.appendChild(cursor);
+    var typed = document.createElement('span');
+    typed.className = 'cmd-txt';
+    line.insertBefore(typed, cursor);
+    for (var i=0;i<cmd.length;i++){
+      typed.textContent += cmd[i];
+      body.scrollTop = body.scrollHeight;
+      // a little human jitter
+      await wait(TYPE_MS + (cmd[i]===' ' ? 30 : 0) + ((i % 5)===0 ? 22 : 0));
+    }
+    await wait(AFTER_CMD);
+    cursor.remove();
+  }
+
+  async function play(){
+    clearTimers();
+    body.innerHTML = '';
+    if (reduced){ renderStatic(); return; }
+    for (var s=0;s<SEQ.length;s++){
+      var step = SEQ[s];
+      if (step.gap){ newLine('&nbsp;'); continue; }
+      if (step.cmd != null){ await typeCmd(step.cwd, step.cmd); }
+      if (step.out){
+        for (var j=0;j<step.out.length;j++){
+          newLine(step.out[j]);
+          await wait(LINE_MS);
+        }
+      }
+    }
+    // trailing prompt with blinking cursor
+    var last = newLine(promptHTML('~/payments-api'));
+    var c = document.createElement('span'); c.className='cursor'; last.appendChild(c);
+    await wait(LOOP_PAUSE);
+    play();
+  }
+
+  function renderStatic(){
+    body.innerHTML = '';
+    SEQ.forEach(function(step){
+      if (step.gap){ newLine('&nbsp;'); return; }
+      if (step.cmd != null){ newLine(promptHTML(step.cwd) + '<span class="cmd-txt">'+step.cmd+'</span>'); }
+      if (step.out){ step.out.forEach(function(o){ newLine(o); }); }
+    });
+    var last = newLine(promptHTML('~/payments-api'));
+    var c = document.createElement('span'); c.className='cursor'; last.appendChild(c);
+  }
+
+  replayBtn.addEventListener('click', function(){ clearTimers(); play(); });
+
+  // start when scrolled into view (cheap: just start; it's above the fold anyway)
+  if (reduced){ renderStatic(); }
+  else { play(); }
+})();
+</script>
+</body>
+</html>

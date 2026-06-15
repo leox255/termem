@@ -13,7 +13,7 @@ use rusqlite::{params, Connection};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-const SCHEMA_VERSION: i64 = 3;
+const SCHEMA_VERSION: i64 = 4;
 
 /// How much message text to fold into the content search index per session.
 const FTS_MSG_CAP: usize = 400;

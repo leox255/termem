@@ -2,6 +2,15 @@
 
 All notable changes to termem are documented here.
 
+## [0.5.2] - 2026-06-15
+
+### Fixed
+- Gemini resume now loads the exact session. termem reads the resumable chats
+  files (`~/.gemini/tmp/<project>/chats/session-*.jsonl`) instead of the prompt
+  log, so sessions have real titles and message counts, and resume runs
+  `gemini --session-file <path>` instead of just reopening gemini. Empty /
+  context-only sessions are skipped. The index rebuilds on upgrade.
+
 ## [0.5.1] - 2026-06-15
 
 ### Changed
