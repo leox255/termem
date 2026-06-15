@@ -47,7 +47,26 @@ end
 
 Then `brew install leox255/tap/termem`.
 
-## 2. Claude Code plugin
+## 2. npm (`npx termem`)
+
+The release workflow also publishes npm packages so anyone with Node can run
+`npx termem` (no Rust). It uses the esbuild-style per-platform packages (see
+`npm/README.md` and `npm/publish.sh`), so there is no postinstall download.
+
+Set it up once:
+
+1. Create an npm automation token: npmjs.com -> Access Tokens -> Generate -> Automation.
+2. Add it as a repo secret named `NPM_TOKEN`:
+   ```
+   gh secret set NPM_TOKEN
+   ```
+3. Cut a release (push a `v*` tag). The `npm` job publishes `termem` plus the
+   per-platform packages from the release binaries.
+
+Then `npx termem`, `npm install -g termem`, and MCP configs like
+`{ "command": "npx", "args": ["-y", "termem", "mcp"] }` work on macOS/Linux.
+
+## 3. Claude Code plugin
 
 This repo is itself a plugin marketplace:
 
@@ -66,7 +85,7 @@ Users install both the skill and the MCP server in one step:
 The plugin still needs the `termem` binary on `PATH` (the MCP server is
 `termem mcp`).
 
-## 3. MCP registries
+## 4. MCP registries
 
 `server.json` is the manifest for the official registry
 (registry.modelcontextprotocol.io).

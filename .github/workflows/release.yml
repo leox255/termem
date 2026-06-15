@@ -1,7 +1,11 @@
 name: Release
 
-# Build and attach binaries when a version tag is pushed, e.g.:
+# Build binaries, attach them to the GitHub release, and publish the npm
+# packages when a version tag is pushed, e.g.:
 #   git tag v0.5.2 && git push origin v0.5.2
+#
+# npm publishing needs an NPM_TOKEN repo secret (an npm automation token).
+# The binary release works without it; only the `npm` job needs it.
 
 on:
   push:
@@ -41,3 +45,29 @@ jobs:
           files: |
             termem-${{ matrix.target }}.tar.gz
             termem-${{ matrix.target }}.tar.gz.sha256
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bin-${{ matrix.target }}
+          path: termem-${{ matrix.target }}.tar.gz
+
+  npm:
+    name: npm publish
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: bin-*
+          merge-multiple: true
+      - name: Publish to npm
+        run: bash npm/publish.sh "${GITHUB_REF_NAME#v}"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
