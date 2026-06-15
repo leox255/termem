@@ -95,18 +95,30 @@ pub fn gather_candidates(roots: &ScanRoots) -> Vec<Candidate> {
     out
 }
 
-/// Parse one candidate into a normalized [`Session`]. Returns the session plus
-/// the stat info to cache. `None` if the file is not a real/attributable session.
+/// Parse one candidate into zero or more normalized [`Session`]s, each with the
+/// stat info to cache. Claude/Codex yield at most one; a shell log yields one
+/// per directory it touched.
 pub fn parse_candidate(
     c: &Candidate,
     thread_map: &HashMap<String, String>,
-) -> Option<(Session, i64, i64)> {
-    let session = match c.source {
-        Source::Claude => claude::parse(&c.path, c.mtime_ms).ok().flatten(),
-        Source::Codex => codex::parse(&c.path, c.mtime_ms, thread_map).ok().flatten(),
-        Source::Shell => shell::parse(&c.path, c.mtime_ms).ok().flatten(),
-    }?;
-    Some((session, c.mtime_ms, c.size))
+) -> Vec<(Session, i64, i64)> {
+    let sessions: Vec<Session> = match c.source {
+        Source::Claude => claude::parse(&c.path, c.mtime_ms)
+            .ok()
+            .flatten()
+            .into_iter()
+            .collect(),
+        Source::Codex => codex::parse(&c.path, c.mtime_ms, thread_map)
+            .ok()
+            .flatten()
+            .into_iter()
+            .collect(),
+        Source::Shell => shell::parse(&c.path, c.mtime_ms).unwrap_or_default(),
+    };
+    sessions
+        .into_iter()
+        .map(|s| (s, c.mtime_ms, c.size))
+        .collect()
 }
 
 /// Parse an RFC3339 timestamp (e.g. `2026-06-15T11:13:13.977Z`) to epoch ms.
