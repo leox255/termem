@@ -1,0 +1,7 @@
+/target
+/.claude/
+**/*.rs.bk
+*.db
+*.db-shm
+*.db-wal
+.DS_Store

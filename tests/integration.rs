@@ -1,0 +1,143 @@
+//! Integration tests against the real session data on this machine. Each test
+//! self-skips if the corresponding tool's data is absent, so the suite stays
+//! green on a fresh checkout while still proving the acceptance criteria here.
+
+use std::path::PathBuf;
+use termem::index::Index;
+use termem::model::Source;
+use termem::query::{query, Scope};
+use termem::scan::ScanRoots;
+
+fn temp_db(tag: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("termem-it-{}-{}.db", tag, std::process::id()))
+}
+
+fn home() -> PathBuf {
+    PathBuf::from(std::env::var("HOME").expect("HOME"))
+}
+
+#[test]
+fn indexes_and_finds_this_build_session() {
+    let proj = home().join(".claude/projects/-Users-amosff-ai-apps-termem");
+    if !proj.exists() {
+        eprintln!("skip: no claude data for this project");
+        return;
+    }
+    let db = temp_db("claude");
+    let _ = std::fs::remove_file(&db);
+    let mut idx = Index::open(&db).unwrap();
+    let stats = idx.refresh().unwrap();
+    assert!(stats.total > 0, "expected to discover session files");
+
+    let res = query(
+        idx.conn(),
+        "/Users/amosff/ai/apps/termem",
+        Scope::Subtree,
+        &[],
+        None,
+        500,
+    )
+    .unwrap();
+
+    let me = res
+        .iter()
+        .find(|s| s.id == "13b4ddd9-8f86-4e4d-bd23-b4fc83d286dd");
+    match me {
+        Some(s) => {
+            assert_eq!(s.source, Source::Claude);
+            assert_eq!(s.title, "Build terminal memory system for session management");
+            assert_eq!(s.cwd, "/Users/amosff/ai/apps/termem");
+        }
+        None => panic!(
+            "this build session not indexed; got {} sessions for the dir",
+            res.len()
+        ),
+    }
+    let _ = std::fs::remove_file(&db);
+}
+
+#[test]
+fn incremental_refresh_only_reparses_changed_files() {
+    // Use a static fixture dir (not the live $HOME tree, which is mutated by
+    // any running session) so incremental behavior is deterministic.
+    let dir = std::env::temp_dir().join(format!("termem-fix-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("a.jsonl"),
+        "{\"type\":\"user\",\"cwd\":\"/x/a\",\"timestamp\":\"2026-01-01T00:00:00.000Z\",\"message\":{\"content\":\"hello a\"}}\n{\"type\":\"ai-title\",\"aiTitle\":\"Session A\"}\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("b.jsonl"),
+        "{\"type\":\"user\",\"cwd\":\"/x/b\",\"timestamp\":\"2026-01-02T00:00:00.000Z\",\"message\":{\"content\":\"hello b\"}}\n{\"type\":\"ai-title\",\"aiTitle\":\"Session B\"}\n",
+    )
+    .unwrap();
+
+    let roots = ScanRoots {
+        claude: Some(dir.clone()),
+        codex: None,
+        shell: None,
+    };
+    let db = temp_db("incr");
+    let _ = std::fs::remove_file(&db);
+    let mut idx = Index::open_with_roots(&db, roots).unwrap();
+
+    let first = idx.refresh().unwrap();
+    assert_eq!(first.total, 2);
+    assert_eq!(first.parsed, 2, "first pass parses both fixtures");
+
+    let second = idx.refresh().unwrap();
+    assert_eq!(second.parsed, 0, "unchanged files are not re-parsed");
+    assert_eq!(second.deleted, 0);
+
+    // Mutate one file -> exactly one re-parse, none deleted.
+    std::fs::write(
+        dir.join("a.jsonl"),
+        "{\"type\":\"user\",\"cwd\":\"/x/a\",\"timestamp\":\"2026-01-03T00:00:00.000Z\",\"message\":{\"content\":\"changed a\"}}\n{\"type\":\"ai-title\",\"aiTitle\":\"Session A v2\"}\n",
+    )
+    .unwrap();
+    let third = idx.refresh().unwrap();
+    assert_eq!(third.parsed, 1, "only the mutated file re-parses");
+
+    // Title updated, found by query in its directory.
+    let res = query(idx.conn(), "/x/a", Scope::Here, &[], None, 10).unwrap();
+    assert_eq!(res.len(), 1);
+    assert_eq!(res[0].title, "Session A v2");
+
+    let _ = std::fs::remove_file(&db);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn resolves_codex_sessions_for_compstack_with_titles() {
+    if !home().join(".codex/sessions").exists() {
+        eprintln!("skip: no codex data");
+        return;
+    }
+    let db = temp_db("codex");
+    let _ = std::fs::remove_file(&db);
+    let mut idx = Index::open(&db).unwrap();
+    idx.refresh().unwrap();
+
+    let res = query(
+        idx.conn(),
+        "/Users/amosff/Documents/Personal/compstack",
+        Scope::Subtree,
+        &[Source::Codex],
+        None,
+        500,
+    )
+    .unwrap();
+
+    assert!(
+        !res.is_empty(),
+        "expected codex sessions for compstack subtree"
+    );
+    for s in &res {
+        assert_eq!(s.source, Source::Codex);
+        assert!(!s.title.trim().is_empty(), "every session needs a title");
+        assert!(!s.id.trim().is_empty(), "every session needs an id");
+    }
+    let _ = std::fs::remove_file(&db);
+}
