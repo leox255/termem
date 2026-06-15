@@ -14,25 +14,23 @@ Run `termem` in a project folder to get a list of every session that started the
 
 ## Install
 
-You need a Rust toolchain. Get one at https://rustup.rs.
-
-Install from GitHub:
+With a Rust toolchain (https://rustup.rs):
 
 ```
-cargo install --git https://github.com/leox255/termem
+cargo install termem
 ```
 
 Or download a prebuilt macOS / Linux binary from the [releases page](https://github.com/leox255/termem/releases), extract it, and put `termem` on your `PATH`.
 
-Or from a local clone:
+From source:
 
 ```
-git clone https://github.com/leox255/termem
-cd termem
-cargo install --path .
+cargo install --git https://github.com/leox255/termem
+# or from a local clone:
+git clone https://github.com/leox255/termem && cd termem && cargo install --path .
 ```
 
-Either way you get a `termem` binary in `~/.cargo/bin` (make sure that is on your `PATH`).
+`cargo install` puts the `termem` binary in `~/.cargo/bin` (make sure that is on your `PATH`).
 
 ## Use
 
