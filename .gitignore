@@ -6,3 +6,4 @@
 *.db-wal
 .DS_Store
 .gstack/
+.wrangler/
