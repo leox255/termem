@@ -41,8 +41,10 @@ jobs:
         shell: bash
         run: |
           dir="target/${{ matrix.target }}/release"
-          tar -C "$dir" -czf "termem-${{ matrix.target }}.tar.gz" "${{ matrix.bin }}"
-          shasum -a 256 "termem-${{ matrix.target }}.tar.gz" > "termem-${{ matrix.target }}.tar.gz.sha256"
+          f="termem-${{ matrix.target }}.tar.gz"
+          tar -C "$dir" -czf "$f" "${{ matrix.bin }}"
+          # macOS/Linux have shasum; Windows Git Bash has sha256sum instead.
+          if command -v shasum >/dev/null; then shasum -a 256 "$f" > "$f.sha256"; else sha256sum "$f" > "$f.sha256"; fi
       - name: Attach to release
         uses: softprops/action-gh-release@v2
         with:
