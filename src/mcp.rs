@@ -176,7 +176,7 @@ fn tool_search(index: &Index, args: &Value) -> Result<Value> {
     let scope = scope_arg(args, Scope::Subtree);
     let sources = sources_arg(args);
     let limit = arg_i64(args, "limit", 20);
-    let sessions = query::query(index.conn(), &dir, scope, &sources, Some(&query_s), limit)?;
+    let sessions = query::search(index.conn(), &query_s, &dir, scope, &sources, limit)?;
     let results: Vec<Value> = sessions
         .iter()
         .map(|s| {

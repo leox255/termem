@@ -5,6 +5,7 @@ use crate::model::{Session, Source};
 use anyhow::Result;
 use rusqlite::types::Value;
 use rusqlite::{Connection, OptionalExtension};
+use std::collections::HashSet;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Scope {
@@ -62,7 +63,7 @@ pub fn query(
     let (scope_sql, mut args) = scope_clause(scope, cwd);
     let mut sql = format!("SELECT {COLUMNS} FROM sessions WHERE 1=1{scope_sql}");
 
-    if !sources.is_empty() && sources.len() < 3 {
+    if !sources.is_empty() {
         let placeholders = sources.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         sql.push_str(&format!(" AND source IN ({placeholders})"));
         for s in sources {
@@ -141,4 +142,106 @@ fn query_by_id(conn: &Connection, id: &str, exact: bool) -> Result<Option<Sessio
         .query_row(rusqlite::params![pat], row_to_session)
         .optional()?;
     Ok(found)
+}
+
+/// Combined search: message-content matches (FTS) first, then metadata matches
+/// (title / first prompt / path / id), deduped, capped at `limit`.
+pub fn search(
+    conn: &Connection,
+    query_s: &str,
+    cwd: &str,
+    scope: Scope,
+    sources: &[Source],
+    limit: i64,
+) -> Result<Vec<Session>> {
+    let q = query_s.trim();
+    let cap = limit.max(1) as usize;
+    let mut out: Vec<Session> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+
+    // 1) Content matches via FTS5 (best-effort: degrade to metadata on any error).
+    if !q.is_empty() {
+        if let Some(matchq) = fts_query(q) {
+            if let Ok(rows) = fts_search(conn, &matchq, cwd, scope, sources, limit) {
+                for s in rows {
+                    if out.len() >= cap {
+                        break;
+                    }
+                    if seen.insert(s.id.clone()) {
+                        out.push(s);
+                    }
+                }
+            }
+        }
+    }
+
+    // 2) Metadata matches fill the remaining slots.
+    let meta = query(
+        conn,
+        cwd,
+        scope,
+        sources,
+        if q.is_empty() { None } else { Some(q) },
+        limit,
+    )?;
+    for s in meta {
+        if out.len() >= cap {
+            break;
+        }
+        if seen.insert(s.id.clone()) {
+            out.push(s);
+        }
+    }
+    Ok(out)
+}
+
+/// Turn free text into a safe FTS5 MATCH string: each alphanumeric token quoted
+/// (so FTS operators can't be injected) and AND-ed together.
+fn fts_query(q: &str) -> Option<String> {
+    let tokens: Vec<String> = q
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| !t.is_empty())
+        .map(|t| format!("\"{t}\""))
+        .collect();
+    if tokens.is_empty() {
+        None
+    } else {
+        Some(tokens.join(" "))
+    }
+}
+
+fn fts_search(
+    conn: &Connection,
+    matchq: &str,
+    cwd: &str,
+    scope: Scope,
+    sources: &[Source],
+    limit: i64,
+) -> Result<Vec<Session>> {
+    let (scope_sql, scope_args) = scope_clause(scope, cwd);
+    let mut args: Vec<Value> = vec![Value::Text(matchq.to_string())];
+    args.extend(scope_args);
+    let mut sql = format!(
+        "SELECT s.file_path, s.id, s.source, s.cwd, s.title, s.first_prompt, s.last_prompt, \
+         s.model, s.git_branch, s.started_at, s.updated_at, s.msg_count \
+         FROM content_fts JOIN sessions s ON s.id = content_fts.session_id \
+         WHERE content_fts MATCH ?{scope_sql}"
+    );
+    if !sources.is_empty() {
+        let placeholders = sources.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        sql.push_str(&format!(" AND s.source IN ({placeholders})"));
+        for s in sources {
+            args.push(Value::Text(s.as_str().to_string()));
+        }
+    }
+    sql.push_str(" ORDER BY rank LIMIT ?");
+    args.push(Value::Integer(limit.max(1)));
+
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(rusqlite::params_from_iter(args.iter()), row_to_session)?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
 }

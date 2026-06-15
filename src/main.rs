@@ -139,14 +139,12 @@ fn cmd_ls(a: LsArgs) -> Result<()> {
     let cwd = resolve_cwd(&a.scope.cwd)?;
     let scope = scope_of(&a.scope);
     let sources = sources_of(&a.scope.source);
-    let res = query::query(
-        idx.conn(),
-        &cwd,
-        scope,
-        &sources,
-        a.search.as_deref(),
-        a.limit,
-    )?;
+    let res = match a.search.as_deref() {
+        Some(q) if !q.trim().is_empty() => {
+            query::search(idx.conn(), q, &cwd, scope, &sources, a.limit)?
+        }
+        _ => query::query(idx.conn(), &cwd, scope, &sources, None, a.limit)?,
+    };
     if a.json {
         println!("{}", serde_json::to_string_pretty(&res)?);
     } else {

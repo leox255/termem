@@ -33,7 +33,7 @@ termem --all                 every session, any directory
 termem ls                    print a table instead of opening the picker
 termem ls --json             machine readable output
 termem ls --source codex     filter by tool: claude, codex, opencode, gemini, shell
-termem ls -s "query"         search the title, prompt, and path
+termem ls -s "query"         search message content, title, prompt, and path
 termem resume <id|text>      resume the best match
 termem resume <id> --print   print the command instead of running it
 termem index                 rebuild the index now
@@ -68,7 +68,7 @@ termem init claude > ~/.claude/skills/termem/SKILL.md
 
 For other agents, `termem init <agent>` prints the right wrapper (claude, codex, opencode, gemini, pi). Every wrapper shares one body and one safety contract, so the workflow never drifts between agents.
 
-The tools: `recall` (orient when you enter a directory), `search` (find a past session), `get_session` (read a transcript, paginated), `save_summary` (store a primer for the next agent), and `stats`. `recall` and `search` default to the current directory tree; widening to the whole machine is explicit.
+The tools: `recall` (orient when you enter a directory), `search` (find a past session by message content or metadata), `get_session` (read a transcript, paginated), `save_summary` (store a primer for the next agent), and `stats`. `recall` and `search` default to the current directory tree; widening to the whole machine is explicit.
 
 ## How it works
 
