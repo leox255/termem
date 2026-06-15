@@ -73,13 +73,14 @@ so there is a one-time, token-free bootstrap (run locally):
    Trusted Publisher -> GitHub Actions and enter: organization `leox255`,
    repository `termem`, workflow filename `release.yml`, environment blank.
 
-   Or script it with the CLI (npm >= 11.10.0):
+   Or script it with the CLI (needs npm >= 11.17 for `--allow-publish`; older
+   npm omits the now-required action field and the registry rejects it with an
+   opaque 400):
    ```
    for p in @termem/cli @termem/darwin-arm64 @termem/darwin-x64 @termem/linux-x64 @termem/linux-arm64; do
-     npm trust github "$p" --repo leox255/termem --file release.yml -y
+     npm trust github "$p" --repo leox255/termem --file release.yml --allow-publish
    done
    ```
-   (check `npm trust github --help` for the exact flags on your npm version).
 4. Cut a release (push a `v*` tag). The `npm` job publishes all five packages
    keylessly via OIDC.
 
