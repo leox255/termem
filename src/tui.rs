@@ -1,12 +1,42 @@
 //! Interactive ratatui picker: fuzzy-filter sessions, preview, and pick one to
 //! resume. Returns the chosen session (the caller execs the resume command).
 
+use crate::logo;
 use crate::model::{rel_time, Session, Source};
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::prelude::*;
-use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
+use ratatui::widgets::{Block, BorderType, List, ListItem, ListState, Paragraph, Wrap};
 use std::time::Duration;
+
+// Palette (catppuccin-ish), kept cohesive across the whole picker.
+const BORDER: (u8, u8, u8) = (69, 71, 96);
+const DIMTXT: (u8, u8, u8) = (127, 132, 156);
+const SELBG: (u8, u8, u8) = (35, 40, 60);
+
+fn rgb(c: (u8, u8, u8)) -> Color {
+    Color::Rgb(c.0, c.1, c.2)
+}
+
+fn source_color(src: Source) -> Color {
+    rgb(match src {
+        Source::Claude => (203, 166, 247),
+        Source::Codex => (166, 227, 161),
+        Source::Gemini => (137, 180, 250),
+        Source::Opencode => (148, 226, 213),
+        Source::Shell => (249, 226, 175),
+    })
+}
+
+fn source_icon(src: Source) -> &'static str {
+    match src {
+        Source::Claude => "◆",
+        Source::Codex => "◇",
+        Source::Gemini => "✦",
+        Source::Opencode => "◈",
+        Source::Shell => "❯",
+    }
+}
 
 /// Run the picker. `Ok(Some(s))` if the user chose to resume `s`, `Ok(None)` if
 /// they quit.
@@ -119,81 +149,106 @@ impl App {
     }
 
     fn draw(&mut self, f: &mut Frame) {
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3),
-                Constraint::Min(3),
-                Constraint::Length(1),
-            ])
-            .split(f.area());
+        let ter_c = rgb(logo::TER_RGB);
+        let mem_c = rgb(logo::MEM_RGB);
+        let dim = Style::new().fg(rgb(DIMTXT));
+        let border = Style::new().fg(rgb(BORDER));
 
-        let header = Paragraph::new(Line::from(vec![Span::raw(format!(
-            "{} session(s) · {}",
-            self.filtered.len(),
-            self.cwd
-        ))]))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(format!(" filter: {}_ ", self.filter)),
-        );
-        f.render_widget(header, chunks[0]);
+        let root = Layout::vertical([
+            Constraint::Length(6),
+            Constraint::Min(3),
+            Constraint::Length(1),
+        ])
+        .split(f.area());
 
-        let body = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
-            .split(chunks[1]);
+        // ---- header: wordmark + context, then a filter line ----
+        let header =
+            Layout::vertical([Constraint::Length(5), Constraint::Length(1)]).split(root[0]);
+        let top = Layout::horizontal([Constraint::Length(38), Constraint::Min(0)]).split(header[0]);
+
+        let ter = logo::ter_rows();
+        let mem = logo::mem_rows();
+        let wordmark: Vec<Line> = (0..5)
+            .map(|i| {
+                Line::from(vec![
+                    Span::styled(ter[i].clone(), Style::new().fg(ter_c).bold()),
+                    Span::raw("  "),
+                    Span::styled(mem[i].clone(), Style::new().fg(mem_c).bold()),
+                ])
+            })
+            .collect();
+        f.render_widget(Paragraph::new(wordmark), top[0]);
+
+        let (shown, total) = (self.filtered.len(), self.all.len());
+        let count_tail = if shown == total {
+            " sessions".to_string()
+        } else {
+            format!(" / {total} sessions")
+        };
+        let info = Paragraph::new(vec![
+            Line::from(""),
+            Line::from(Span::styled("cross-agent memory & sessions", dim)),
+            Line::from(vec![
+                Span::styled(format!("{shown}"), Style::new().fg(ter_c).bold()),
+                Span::styled(count_tail, dim),
+            ]),
+            Line::from(Span::styled(clip(&self.cwd, 44), dim)),
+        ]);
+        f.render_widget(info, top[1]);
+
+        let mut filter_spans = vec![
+            Span::raw(" "),
+            Span::styled("› ", Style::new().fg(mem_c).bold()),
+        ];
+        if self.filter.is_empty() {
+            filter_spans.push(Span::styled("type to filter", dim));
+        } else {
+            filter_spans.push(Span::raw(self.filter.clone()));
+            filter_spans.push(Span::styled("▏", Style::new().fg(mem_c)));
+        }
+        f.render_widget(Paragraph::new(Line::from(filter_spans)), header[1]);
+
+        // ---- body: list + preview ----
+        let body = Layout::horizontal([Constraint::Percentage(55), Constraint::Percentage(45)])
+            .split(root[1]);
 
         let items: Vec<ListItem> = self
             .filtered
             .iter()
             .map(|&idx| {
                 let s = &self.all[idx];
-                let icon = match s.source {
-                    Source::Claude => "◆",
-                    Source::Codex => "◇",
-                    Source::Gemini => "✦",
-                    Source::Opencode => "◈",
-                    Source::Shell => "❯",
-                };
                 ListItem::new(Line::from(vec![
-                    Span::styled(format!("{icon} "), source_style(s.source)),
                     Span::styled(
-                        format!("{:>4} ", rel_time(s.updated_at)),
-                        Style::new().fg(Color::DarkGray),
+                        format!("{} ", source_icon(s.source)),
+                        Style::new().fg(source_color(s.source)),
                     ),
-                    Span::raw(clip(&s.title, 58)),
+                    Span::styled(format!("{:>4}  ", rel_time(s.updated_at)), dim),
+                    Span::raw(clip(&s.title, 48)),
                 ]))
             })
             .collect();
 
         let list = List::new(items)
-            .block(Block::default().borders(Borders::ALL).title(" sessions "))
-            .highlight_style(
-                Style::new()
-                    .bg(Color::Blue)
-                    .fg(Color::White)
-                    .add_modifier(Modifier::BOLD),
-            )
-            .highlight_symbol("▶ ");
+            .block(panel(border, " sessions ", ter_c))
+            .highlight_style(Style::new().bg(rgb(SELBG)).fg(ter_c).bold())
+            .highlight_symbol("▌ ");
         f.render_stateful_widget(list, body[0], &mut self.state);
 
         let preview = match self.selected_session() {
             Some(s) => {
-                let dim = Style::new().fg(Color::DarkGray);
+                let label = |t: &str| Span::styled(format!("{t:<8}"), dim);
                 let mut lines = vec![
                     Line::from(Span::styled(
-                        s.title.clone(),
-                        Style::new().add_modifier(Modifier::BOLD),
+                        clip(&s.title, 60),
+                        Style::new().fg(mem_c).bold(),
                     )),
                     Line::from(""),
                     Line::from(vec![
-                        Span::styled("source  ", dim),
-                        Span::styled(s.source.as_str(), source_style(s.source)),
+                        label("source"),
+                        Span::styled(s.source.as_str(), Style::new().fg(source_color(s.source))),
                     ]),
                     Line::from(vec![
-                        Span::styled("updated ", dim),
+                        label("updated"),
                         Span::raw(format!(
                             "{} ago · {} msgs",
                             rel_time(s.updated_at),
@@ -201,56 +256,64 @@ impl App {
                         )),
                     ]),
                     Line::from(vec![
-                        Span::styled("model   ", dim),
+                        label("model"),
                         Span::raw(s.model.clone().unwrap_or_else(|| "—".into())),
                     ]),
-                    Line::from(vec![
-                        Span::styled("cwd     ", dim),
-                        Span::raw(s.cwd.clone()),
-                    ]),
+                    Line::from(vec![label("cwd"), Span::raw(s.cwd.clone())]),
                 ];
                 if let Some(b) = &s.git_branch {
                     if !b.is_empty() {
-                        lines.push(Line::from(vec![
-                            Span::styled("branch  ", dim),
-                            Span::raw(b.clone()),
-                        ]));
+                        lines.push(Line::from(vec![label("branch"), Span::raw(b.clone())]));
                     }
                 }
                 lines.push(Line::from(""));
                 lines.push(Line::from(Span::styled("first prompt", dim)));
                 lines.push(Line::from(clip(&s.first_prompt, 600)));
-                Paragraph::new(lines)
-                    .wrap(Wrap { trim: true })
-                    .block(Block::default().borders(Borders::ALL).title(" preview "))
+                Paragraph::new(lines).wrap(Wrap { trim: true }).block(panel(
+                    border,
+                    " preview ",
+                    mem_c,
+                ))
             }
-            None => Paragraph::new("no match")
-                .block(Block::default().borders(Borders::ALL).title(" preview ")),
+            None => Paragraph::new(Span::styled("no match", dim)).block(panel(
+                border,
+                " preview ",
+                mem_c,
+            )),
         };
         f.render_widget(preview, body[1]);
 
-        let help = Paragraph::new(Line::from(vec![
-            Span::styled(" ↑↓", Style::new().fg(Color::Cyan)),
-            Span::raw(" move  "),
-            Span::styled("⏎", Style::new().fg(Color::Cyan)),
-            Span::raw(" resume  "),
-            Span::styled("type", Style::new().fg(Color::Cyan)),
-            Span::raw(" filter  "),
-            Span::styled("esc", Style::new().fg(Color::Cyan)),
-            Span::raw(" quit"),
+        // ---- footer ----
+        let key = |k: &str| {
+            Span::styled(
+                format!(" {k} "),
+                Style::new().fg(Color::Black).bg(rgb(DIMTXT)),
+            )
+        };
+        let footer = Paragraph::new(Line::from(vec![
+            Span::raw(" "),
+            key("↑↓"),
+            Span::styled(" move   ", dim),
+            key("⏎"),
+            Span::styled(" open   ", dim),
+            key("type"),
+            Span::styled(" filter   ", dim),
+            key("esc"),
+            Span::styled(" quit", dim),
         ]));
-        f.render_widget(help, chunks[2]);
+        f.render_widget(footer, root[2]);
     }
 }
 
-fn source_style(src: Source) -> Style {
-    match src {
-        Source::Claude => Style::new().fg(Color::Magenta),
-        Source::Codex => Style::new().fg(Color::Green),
-        Source::Gemini => Style::new().fg(Color::Blue),
-        Source::Opencode => Style::new().fg(Color::Cyan),
-        Source::Shell => Style::new().fg(Color::Yellow),
-    }
+/// A rounded panel with a colored title.
+fn panel<'a>(border: Style, title: &'a str, title_color: Color) -> Block<'a> {
+    Block::bordered()
+        .border_type(BorderType::Rounded)
+        .border_style(border)
+        .title(Line::from(Span::styled(
+            title,
+            Style::new().fg(title_color).bold(),
+        )))
 }
 
 fn clip(s: &str, max: usize) -> String {
@@ -318,7 +381,7 @@ mod tests {
         let mut app = App::new(
             vec![
                 sess("Alpha session", "/p", Source::Claude),
-                sess("Beta session", "/p", Source::Codex),
+                sess("Beta session", "/p", Source::Gemini),
             ],
             "/p".into(),
         );

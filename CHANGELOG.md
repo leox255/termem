@@ -2,6 +2,12 @@
 
 All notable changes to termem are documented here.
 
+## [0.5.1] - 2026-06-15
+
+### Changed
+- Restyled the interactive picker: a `termem` wordmark (teal/violet), rounded
+  panels, a cohesive palette, colored per-source badges, and a cleaner key bar.
+
 ## [0.5.0] - 2026-06-15
 
 ### Added
