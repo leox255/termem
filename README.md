@@ -14,7 +14,7 @@ Run `termem` in a project folder to get a list of every session that started the
 
 ## Install
 
-With Node, no Rust required:
+With Node:
 
 ```
 npx @termem/cli              # run it directly

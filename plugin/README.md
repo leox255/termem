@@ -3,7 +3,7 @@
 This plugin bundles the termem skill and registers the termem MCP server
 (`recall`, `search`, `get_session`, `save_summary`, `stats`).
 
-It requires the `termem` binary on your `PATH`. Install it first (no Rust required):
+It requires the `termem` binary on your `PATH`. Install it first:
 
 ```
 npm install -g @termem/cli
