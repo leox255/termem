@@ -67,14 +67,31 @@ eval "$(termem init bash)"
 
 termem also runs as an MCP server, so a coding agent can recall what happened in a directory before, even work done by a different agent. termem stores agent-written summaries in its own sidecar (never in the source files) and serves them to whatever agent asks next. It never calls a model and never makes a network request: the agent does the reasoning, termem does retrieval and storage.
 
-Register it with Claude Code:
+The MCP server is the `termem mcp` command, so there is nothing extra to download: registering just points your agent at the binary already on your `PATH`. The skill is a `SKILL.md` that termem generates.
+
+Register it with Claude Code (user scope, so it works in every project):
 
 ```
-claude mcp add termem -- termem mcp
-termem init claude > ~/.claude/skills/termem/SKILL.md
+claude mcp add termem --scope user -- termem mcp
+mkdir -p ~/.claude/skills/termem && termem init claude > ~/.claude/skills/termem/SKILL.md
 ```
 
-For other agents, `termem init <agent>` prints the right wrapper (claude, codex, opencode, gemini, pi). Every wrapper shares one body and one safety contract, so the workflow never drifts between agents.
+Where they load from:
+
+- MCP: `~/.claude.json` (user scope), or a project `.mcp.json` you commit to share with a team.
+- Skill: `~/.claude/skills/termem/SKILL.md` (user-global), or `<repo>/.claude/skills/termem/SKILL.md` (per project).
+
+Restart the agent (or start a new session) to pick them up.
+
+For other agents, `termem init <agent>` prints the wrapper file and the one-line MCP registration for that tool:
+
+```
+termem init codex      # AGENTS.md  + ~/.codex/config.toml entry
+termem init gemini     # GEMINI.md  + ~/.gemini/settings.json entry
+termem init opencode   # AGENTS.md  + opencode.json entry
+```
+
+Every wrapper shares one body and one safety contract, so the workflow never drifts between agents.
 
 The tools: `recall` (orient when you enter a directory), `search` (find a past session by message content or metadata), `get_session` (read a transcript, paginated), `save_summary` (store a primer for the next agent), and `stats`. `recall` and `search` default to the current directory tree; widening to the whole machine is explicit.
 
@@ -85,14 +102,14 @@ termem reads the data the tools already write:
 ```
 Claude Code   ~/.claude/projects/<dir>/<id>.jsonl
 Codex         ~/.codex/sessions/.../rollout-*.jsonl
-opencode      ~/.local/share/opencode/opencode.db   (session table)
-Gemini        ~/.gemini/tmp/<project>/logs.json
-Shell         ~/.termem/shell/*.log                  (written by the shell hook)
+opencode      ~/.local/share/opencode/opencode.db          (session table)
+Gemini        ~/.gemini/tmp/<project>/chats/session-*.jsonl
+Shell         ~/.termem/shell/*.log                         (written by the shell hook)
 ```
 
 Each session records the directory it ran in, so termem groups by directory. A shell session that moves between directories is listed under each one. Titles come from the title the tool already stored, or the first prompt if there is none. termem does not call any model and does not send your data anywhere.
 
-Resume support differs by tool. Claude Code, Codex, and opencode resume the exact session by id. Gemini has no resume-by-id on its CLI, so termem shows your Gemini prompts per directory and reopens `gemini` in that directory. Shell entries just take you back to the directory.
+Claude Code, Codex, opencode, and Gemini all resume the exact session (Gemini via `gemini --session-file`). Shell entries just take you back to the directory.
 
 Sessions are cached in SQLite, keyed on each file's modification time and size, so only changed files are re-read. A full scan of a few hundred sessions takes well under a second and later scans are near instant.
 
