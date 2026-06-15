@@ -66,9 +66,12 @@ pub fn parse_reader<R: BufRead>(
         acc.last_cmd = cmd.to_string();
         acc.count += 1;
         if let Ok(secs) = ts.parse::<i64>() {
-            let ms = secs * 1000;
-            acc.started = acc.started.min(ms);
-            acc.updated = acc.updated.max(ms);
+            // checked_mul: a corrupt/huge value in the log must not overflow
+            // (panic in debug, wrap to a negative timestamp in release).
+            if let Some(ms) = secs.checked_mul(1000) {
+                acc.started = acc.started.min(ms);
+                acc.updated = acc.updated.max(ms);
+            }
         }
     }
 

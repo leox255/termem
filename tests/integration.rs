@@ -149,6 +149,64 @@ fn shell_log_indexes_one_row_per_directory() {
 }
 
 #[test]
+fn reindex_evicts_stale_shell_directories() {
+    let dir = std::env::temp_dir().join(format!("termem-shre-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let log = dir.join("s1.log");
+    std::fs::write(
+        &log,
+        "1718450000\t/tmp/projA\tls\n1718450010\t/tmp/projB\tcargo build\n",
+    )
+    .unwrap();
+
+    let roots = ScanRoots {
+        claude: None,
+        codex: None,
+        shell: Some(dir.clone()),
+    };
+    let db = temp_db("shre");
+    let _ = std::fs::remove_file(&db);
+    let mut idx = Index::open_with_roots(&db, roots).unwrap();
+    idx.refresh().unwrap();
+    assert_eq!(
+        query(idx.conn(), "/tmp/projB", Scope::Here, &[], None, 10)
+            .unwrap()
+            .len(),
+        1
+    );
+
+    // Rewrite the log: drop projB, add projC, add a command to projA. The
+    // different length guarantees the (mtime, size) cache sees a change.
+    std::fs::write(
+        &log,
+        "1718450100\t/tmp/projA\tls\n1718450110\t/tmp/projA\tgit status\n1718450120\t/tmp/projC\tmake\n",
+    )
+    .unwrap();
+    let stats = idx.refresh().unwrap();
+    assert_eq!(stats.parsed, 2, "projA and projC re-parsed");
+    assert!(
+        query(idx.conn(), "/tmp/projB", Scope::Here, &[], None, 10)
+            .unwrap()
+            .is_empty(),
+        "stale projB row evicted"
+    );
+    assert_eq!(
+        query(idx.conn(), "/tmp/projC", Scope::Here, &[], None, 10)
+            .unwrap()
+            .len(),
+        1,
+        "projC added"
+    );
+    let a = query(idx.conn(), "/tmp/projA", Scope::Here, &[], None, 10).unwrap();
+    assert_eq!(a.len(), 1);
+    assert_eq!(a[0].msg_count, 2, "projA updated to two commands");
+
+    let _ = std::fs::remove_file(&db);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn resolves_codex_sessions_for_compstack_with_titles() {
     if !home().join(".codex/sessions").exists() {
         eprintln!("skip: no codex data");
