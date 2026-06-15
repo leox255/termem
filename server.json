@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.leox255/termem",
-  "description": "Cross-agent terminal memory: recall, search, and resume Claude Code, Codex, Gemini, opencode, and shell sessions by directory. No model calls, no network.",
+  "description": "Cross-agent terminal memory: recall, search, and resume agent sessions by directory.",
   "repository": { "url": "https://github.com/leox255/termem", "source": "github" },
   "version": "0.5.2",
   "packages": [
