@@ -38,7 +38,7 @@ for entry in "${targets[@]}"; do
   "version": "$VERSION",
   "description": "termem prebuilt binary for $os-$cpu",
   "license": "MIT",
-  "repository": "https://github.com/leox255/termem",
+  "repository": { "type": "git", "url": "git+https://github.com/leox255/termem.git" },
   "os": ["$os"],
   "cpu": ["$cpu"],
   "files": ["termem"]
@@ -66,7 +66,7 @@ cat >"$main/package.json" <<EOF
   "version": "$VERSION",
   "description": "Cross-agent terminal memory and session management: recall, search, and resume Claude Code, Codex, Gemini, opencode, and shell sessions by directory.",
   "license": "MIT",
-  "repository": "https://github.com/leox255/termem",
+  "repository": { "type": "git", "url": "git+https://github.com/leox255/termem.git" },
   "homepage": "https://github.com/leox255/termem",
   "bin": { "termem": "bin/termem.js" },
   "files": ["bin/termem.js"],

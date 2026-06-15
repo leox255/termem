@@ -53,15 +53,34 @@ The release workflow also publishes npm packages so anyone with Node can run
 `npx termem` (no Rust). It uses the esbuild-style per-platform packages (see
 `npm/README.md` and `npm/publish.sh`), so there is no postinstall download.
 
-Set it up once:
+CI publishes with **OIDC trusted publishing** -- no `NPM_TOKEN` secret, and npm
+records build provenance automatically. The `npm` job in `release.yml` already
+has `id-token: write` and runs on npm 11.
 
-1. Create an npm automation token: npmjs.com -> Access Tokens -> Generate -> Automation.
-2. Add it as a repo secret named `NPM_TOKEN`:
+npm only lets you attach a trusted publisher to a package that already exists,
+so there is a one-time, token-free bootstrap (run locally):
+
+1. Log in to npm: `npm login`.
+2. Reserve the five package names (publishes a tiny `0.0.0` placeholder for
+   each; the real release publishes a higher version over it):
    ```
-   gh secret set NPM_TOKEN
+   bash npm/reserve.sh
    ```
-3. Cut a release (push a `v*` tag). The `npm` job publishes `termem` plus the
-   per-platform packages from the release binaries.
+3. Add a trusted publisher for EACH package. For every one of `termem`,
+   `termem-darwin-arm64`, `termem-darwin-x64`, `termem-linux-x64`,
+   `termem-linux-arm64`, on npmjs.com open the package -> Settings -> Trusted
+   Publisher -> GitHub Actions and enter: organization `leox255`, repository
+   `termem`, workflow filename `release.yml`, environment blank.
+
+   Or script it with the CLI (npm >= 11.10.0):
+   ```
+   for p in termem termem-darwin-arm64 termem-darwin-x64 termem-linux-x64 termem-linux-arm64; do
+     npm trust github "$p" --repo leox255/termem --file release.yml
+   done
+   ```
+   (check `npm trust github --help` for the exact flags on your npm version).
+4. Cut a release (push a `v*` tag). The `npm` job publishes all five packages
+   keylessly via OIDC.
 
 Then `npx termem`, `npm install -g termem`, and MCP configs like
 `{ "command": "npx", "args": ["-y", "termem", "mcp"] }` work on macOS/Linux.

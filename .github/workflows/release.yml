@@ -4,8 +4,8 @@ name: Release
 # packages when a version tag is pushed, e.g.:
 #   git tag v0.5.2 && git push origin v0.5.2
 #
-# npm publishing needs an NPM_TOKEN repo secret (an npm automation token).
-# The binary release works without it; only the `npm` job needs it.
+# npm publishing uses OIDC trusted publishing (no NPM_TOKEN secret). Each npm
+# package needs a one-time trusted-publisher setup; see DISTRIBUTION.md.
 
 on:
   push:
@@ -55,19 +55,23 @@ jobs:
     name: npm publish
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # OIDC token for npm trusted publishing (no NPM_TOKEN)
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-          registry-url: https://registry.npmjs.org
+          node-version: 24   # ships npm 11; OIDC needs npm >= 11.5.1. No registry-url (that wants a token).
+      - name: Use a trusted-publishing-capable npm
+        run: npm install -g npm@latest
       - name: Download binaries
         uses: actions/download-artifact@v4
         with:
           path: dist
           pattern: bin-*
           merge-multiple: true
-      - name: Publish to npm
+      - name: Publish to npm (OIDC trusted publishing)
         run: bash npm/publish.sh "${GITHUB_REF_NAME#v}"
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"

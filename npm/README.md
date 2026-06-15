@@ -13,8 +13,9 @@ execs that binary with the given args (so `npx termem mcp` runs the MCP server).
 
 These are published by the `npm` job in `.github/workflows/release.yml` when a
 `v*` tag is pushed. `npm/publish.sh` generates each package from the release
-binaries in `./dist` and runs `npm publish`. Set an `NPM_TOKEN` repo secret
-(an npm automation token) so CI can publish.
+binaries in `./dist` and runs `npm publish`. CI authenticates with OIDC
+trusted publishing (no `NPM_TOKEN`); each package needs a one-time
+trusted-publisher setup first -- see `../DISTRIBUTION.md` and `reserve.sh`.
 
 Covered today: macOS (arm64, x64) and Linux (x64, arm64). Windows is not built
 yet, so `npx termem` reports an unsupported platform there.
