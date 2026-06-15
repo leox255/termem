@@ -137,7 +137,7 @@ impl Index {
             .iter()
             .map(|c| c.path.to_string_lossy().to_string())
             .collect();
-        let thread_map = scan::codex::load_thread_map(self.roots.codex.as_deref());
+        let lookups = scan::build_lookups(&self.roots);
 
         // Files whose (mtime, size) changed since they were last indexed.
         let changed: Vec<&scan::Candidate> = candidates
@@ -157,7 +157,7 @@ impl Index {
             .map(|&c| {
                 (
                     c.path.to_string_lossy().to_string(),
-                    scan::parse_candidate(c, &thread_map),
+                    scan::parse_candidate(c, &lookups),
                 )
             })
             .collect();
@@ -207,6 +207,8 @@ impl Index {
 fn session_key(s: &Session) -> String {
     match s.source {
         Source::Shell => format!("{}#{}", s.file_path, s.cwd),
+        // Gemini logs and the opencode DB pack many sessions into one file.
+        Source::Gemini | Source::Opencode => format!("{}#{}", s.file_path, s.id),
         _ => s.file_path.clone(),
     }
 }

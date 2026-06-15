@@ -7,6 +7,9 @@ pub fn command_for(s: &Session) -> Option<(String, Vec<String>)> {
     match s.source {
         Source::Claude => Some(("claude".into(), vec!["--resume".into(), s.id.clone()])),
         Source::Codex => Some(("codex".into(), vec!["resume".into(), s.id.clone()])),
+        Source::Opencode => Some(("opencode".into(), vec!["--session".into(), s.id.clone()])),
+        // Gemini has no resume-by-id; reopen gemini in the session's directory.
+        Source::Gemini => Some(("gemini".into(), Vec::new())),
         // A shell "session" can't be resumed; we just return to its directory.
         Source::Shell => None,
     }
@@ -15,6 +18,7 @@ pub fn command_for(s: &Session) -> Option<(String, Vec<String>)> {
 /// A copy-pasteable shell line: `cd <cwd> && <resume cmd>`.
 pub fn print_line(s: &Session) -> String {
     match command_for(s) {
+        Some((cmd, args)) if args.is_empty() => format!("cd {} && {}", shell_quote(&s.cwd), cmd),
         Some((cmd, args)) => {
             let arg_str = args
                 .iter()
@@ -103,6 +107,18 @@ mod tests {
     fn codex_resume_line() {
         let s = sess(Source::Codex, "uuid", "/p");
         assert_eq!(print_line(&s), "cd /p && codex resume uuid");
+    }
+
+    #[test]
+    fn opencode_resume_line() {
+        let s = sess(Source::Opencode, "ses_123", "/p");
+        assert_eq!(print_line(&s), "cd /p && opencode --session ses_123");
+    }
+
+    #[test]
+    fn gemini_reopens_in_dir() {
+        let s = sess(Source::Gemini, "sid", "/p");
+        assert_eq!(print_line(&s), "cd /p && gemini");
     }
 
     #[test]

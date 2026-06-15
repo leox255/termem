@@ -80,6 +80,8 @@ fn incremental_refresh_only_reparses_changed_files() {
     let roots = ScanRoots {
         claude: Some(dir.clone()),
         codex: None,
+        gemini: None,
+        opencode: None,
         shell: None,
     };
     let db = temp_db("incr");
@@ -128,6 +130,8 @@ fn shell_log_indexes_one_row_per_directory() {
     let roots = ScanRoots {
         claude: None,
         codex: None,
+        gemini: None,
+        opencode: None,
         shell: Some(dir.clone()),
     };
     let db = temp_db("shell");
@@ -166,6 +170,8 @@ fn reindex_evicts_stale_shell_directories() {
     let roots = ScanRoots {
         claude: None,
         codex: None,
+        gemini: None,
+        opencode: None,
         shell: Some(dir.clone()),
     };
     let db = temp_db("shre");

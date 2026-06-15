@@ -1,5 +1,7 @@
 pub mod claude;
 pub mod codex;
+pub mod gemini;
+pub mod opencode;
 pub mod shell;
 
 use crate::model::{Session, Source};
@@ -52,6 +54,25 @@ fn collect_files(root: &Path, ext: &str, source: Source, out: &mut Vec<Candidate
     }
 }
 
+/// Like `collect_files` but matches an exact file name (Gemini's `logs.json`).
+fn collect_named(root: &Path, name: &str, source: Source, out: &mut Vec<Candidate>) {
+    if !root.exists() {
+        return;
+    }
+    for entry in WalkDir::new(root).into_iter().filter_map(|e| e.ok()) {
+        if entry.file_type().is_file() && entry.file_name() == name {
+            if let Ok(meta) = entry.metadata() {
+                out.push(Candidate {
+                    path: entry.path().to_path_buf(),
+                    source,
+                    mtime_ms: mtime_ms(&meta),
+                    size: meta.len() as i64,
+                });
+            }
+        }
+    }
+}
+
 /// The directories scanned for each source. `None` disables a source. Override
 /// the defaults to point termem at non-standard or synced session locations
 /// (and to test incremental behavior against static fixtures).
@@ -59,6 +80,9 @@ fn collect_files(root: &Path, ext: &str, source: Source, out: &mut Vec<Candidate
 pub struct ScanRoots {
     pub claude: Option<PathBuf>,
     pub codex: Option<PathBuf>,
+    pub gemini: Option<PathBuf>,
+    /// Path to the opencode SQLite database file (not a directory).
+    pub opencode: Option<PathBuf>,
     pub shell: Option<PathBuf>,
 }
 
@@ -69,6 +93,8 @@ impl ScanRoots {
         ScanRoots {
             claude: Some(h.join(".claude/projects")),
             codex: Some(h.join(".codex/sessions")),
+            gemini: Some(h.join(".gemini/tmp")),
+            opencode: Some(h.join(".local/share/opencode/opencode.db")),
             shell: Some(h.join(".termem/shell")),
         }
     }
@@ -89,6 +115,27 @@ pub fn gather_candidates(roots: &ScanRoots) -> Vec<Candidate> {
     if let Some(p) = &roots.codex {
         collect_files(p, "jsonl", Source::Codex, &mut out);
     }
+    if let Some(p) = &roots.gemini {
+        collect_named(p, "logs.json", Source::Gemini, &mut out);
+    }
+    if let Some(db) = &roots.opencode {
+        // One candidate for the whole DB. Combine the db + wal stat so writes
+        // that only touch the WAL still register as a change.
+        if let Ok(dbm) = std::fs::metadata(db) {
+            let mut size = dbm.len() as i64;
+            let mut mt = mtime_ms(&dbm);
+            if let Ok(walm) = std::fs::metadata(db.with_extension("db-wal")) {
+                size += walm.len() as i64;
+                mt = mt.max(mtime_ms(&walm));
+            }
+            out.push(Candidate {
+                path: db.clone(),
+                source: Source::Opencode,
+                mtime_ms: mt,
+                size,
+            });
+        }
+    }
     if let Some(p) = &roots.shell {
         collect_files(p, "log", Source::Shell, &mut out);
     }
@@ -98,21 +145,40 @@ pub fn gather_candidates(roots: &ScanRoots) -> Vec<Candidate> {
 /// A parsed session plus the file stat info (mtime, size) to cache.
 pub type ScannedRow = (Session, i64, i64);
 
+/// Side tables loaded once per refresh and shared across the parallel parses.
+pub struct Lookups {
+    /// Codex `id -> thread_name`.
+    pub codex_threads: HashMap<String, String>,
+    /// Gemini `projectKey -> directory`.
+    pub gemini_projects: HashMap<String, String>,
+}
+
+pub fn build_lookups(roots: &ScanRoots) -> Lookups {
+    Lookups {
+        codex_threads: codex::load_thread_map(roots.codex.as_deref()),
+        gemini_projects: gemini::load_project_map(roots.gemini.as_deref()),
+    }
+}
+
 /// Parse one candidate into zero or more normalized [`Session`]s, each with the
-/// stat info to cache. Claude/Codex yield at most one; a shell log yields one
-/// per directory it touched.
-pub fn parse_candidate(c: &Candidate, thread_map: &HashMap<String, String>) -> Vec<ScannedRow> {
+/// stat info to cache. Claude/Codex yield at most one; shell logs, Gemini logs,
+/// and the opencode DB yield several.
+pub fn parse_candidate(c: &Candidate, lookups: &Lookups) -> Vec<ScannedRow> {
     let sessions: Vec<Session> = match c.source {
         Source::Claude => claude::parse(&c.path, c.mtime_ms)
             .ok()
             .flatten()
             .into_iter()
             .collect(),
-        Source::Codex => codex::parse(&c.path, c.mtime_ms, thread_map)
+        Source::Codex => codex::parse(&c.path, c.mtime_ms, &lookups.codex_threads)
             .ok()
             .flatten()
             .into_iter()
             .collect(),
+        Source::Gemini => {
+            gemini::parse(&c.path, c.mtime_ms, &lookups.gemini_projects).unwrap_or_default()
+        }
+        Source::Opencode => opencode::parse(&c.path).unwrap_or_default(),
         Source::Shell => shell::parse(&c.path, c.mtime_ms).unwrap_or_default(),
     };
     sessions

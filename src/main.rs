@@ -210,29 +210,30 @@ fn cmd_hint(a: HintArgs) -> Result<()> {
         Err(_) => return Ok(()),
     };
     let cwd = resolve_cwd(&a.cwd)?;
-    let (claude, codex, shell) =
-        query::counts_by_source(idx.conn(), &cwd, Scope::Subtree).unwrap_or((0, 0, 0));
-    if let Some(line) = hint_line(claude, codex, shell) {
+    let counts = query::counts_by_source(idx.conn(), &cwd, Scope::Subtree).unwrap_or_default();
+    if let Some(line) = hint_line(&counts) {
         println!("{line}");
     }
     Ok(())
 }
 
 /// One-line summary from per-source counts, or `None` when there are none.
-fn hint_line(claude: i64, codex: i64, shell: i64) -> Option<String> {
-    let total = claude + codex + shell;
+fn hint_line(counts: &[(String, i64)]) -> Option<String> {
+    let total: i64 = counts.iter().map(|(_, n)| n).sum();
     if total <= 0 {
         return None;
     }
+    const ORDER: [&str; 5] = ["claude", "codex", "gemini", "opencode", "shell"];
     let mut parts = Vec::new();
-    if claude > 0 {
-        parts.push(format!("{claude} claude"));
-    }
-    if codex > 0 {
-        parts.push(format!("{codex} codex"));
-    }
-    if shell > 0 {
-        parts.push(format!("{shell} shell"));
+    for tag in ORDER {
+        let n = counts
+            .iter()
+            .find(|(t, _)| t == tag)
+            .map(|(_, n)| *n)
+            .unwrap_or(0);
+        if n > 0 {
+            parts.push(format!("{n} {tag}"));
+        }
     }
     let noun = if total == 1 { "session" } else { "sessions" };
     Some(format!(
@@ -338,14 +339,18 @@ mod tests {
 
     #[test]
     fn hint_line_formats() {
-        assert_eq!(hint_line(0, 0, 0), None);
+        assert_eq!(hint_line(&[]), None);
         assert_eq!(
-            hint_line(0, 0, 1).unwrap(),
+            hint_line(&[("shell".into(), 1)]).unwrap(),
             "termem: 1 session here (1 shell). run 'termem' to resume."
         );
         assert_eq!(
-            hint_line(2, 1, 0).unwrap(),
+            hint_line(&[("codex".into(), 1), ("claude".into(), 2)]).unwrap(),
             "termem: 3 sessions here (2 claude, 1 codex). run 'termem' to resume."
+        );
+        assert_eq!(
+            hint_line(&[("opencode".into(), 1), ("gemini".into(), 2)]).unwrap(),
+            "termem: 3 sessions here (2 gemini, 1 opencode). run 'termem' to resume."
         );
     }
 }
