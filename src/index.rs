@@ -5,14 +5,22 @@
 //! disappeared, so steady-state refreshes are near-instant.
 
 use crate::model::{Session, Source};
-use crate::scan::{self, ScanRoots, ScannedRow};
+use crate::scan::{self, ScanRoots};
+use crate::transcript;
 use anyhow::Result;
 use rayon::prelude::*;
 use rusqlite::{params, Connection};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 3;
+
+/// How much message text to fold into the content search index per session.
+const FTS_MSG_CAP: usize = 400;
+const FTS_BODY_MAX_CHARS: usize = 200_000;
+
+/// A parsed session, its file stat (mtime, size), and its searchable body.
+type ScannedBody = (Session, i64, i64, String);
 
 /// Index DB path: `$TERMEM_DB` if set, else `~/.termem/index.db`.
 fn db_path() -> Result<std::path::PathBuf> {
@@ -135,7 +143,11 @@ impl Index {
             CREATE INDEX IF NOT EXISTS idx_sessions_file ON sessions(file_path);
             CREATE INDEX IF NOT EXISTS idx_sessions_cwd ON sessions(cwd);
             CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at);
-            CREATE INDEX IF NOT EXISTS idx_sessions_id ON sessions(id);",
+            CREATE INDEX IF NOT EXISTS idx_sessions_id ON sessions(id);
+            DROP TABLE IF EXISTS content_fts;
+            CREATE VIRTUAL TABLE content_fts USING fts5(
+                session_id UNINDEXED, body, tokenize = 'porter unicode61'
+            );",
         )?;
         self.conn
             .pragma_update(None, "user_version", SCHEMA_VERSION)?;
@@ -183,14 +195,19 @@ impl Index {
             })
             .collect();
 
-        // Re-parse changed files in parallel, keeping rows grouped by file.
-        let parsed: Vec<(String, Vec<ScannedRow>)> = changed
+        // Re-parse changed files in parallel, with the searchable body per
+        // session (read with a cap so a giant transcript stays bounded).
+        let parsed: Vec<(String, Vec<ScannedBody>)> = changed
             .par_iter()
             .map(|&c| {
-                (
-                    c.path.to_string_lossy().to_string(),
-                    scan::parse_candidate(c, &lookups),
-                )
+                let rows = scan::parse_candidate(c, &lookups)
+                    .into_iter()
+                    .map(|(s, mt, sz)| {
+                        let body = content_body(&s);
+                        (s, mt, sz, body)
+                    })
+                    .collect::<Vec<_>>();
+                (c.path.to_string_lossy().to_string(), rows)
             })
             .collect();
 
@@ -213,15 +230,29 @@ impl Index {
                 continue;
             }
             tx.execute(
+                "DELETE FROM content_fts WHERE session_id IN \
+                 (SELECT id FROM sessions WHERE file_path = ?1)",
+                params![file_path],
+            )?;
+            tx.execute(
                 "DELETE FROM sessions WHERE file_path = ?1",
                 params![file_path],
             )?;
-            for (s, mtime, size) in rows {
+            for (s, mtime, size, body) in rows {
                 upsert(&tx, s, *mtime, *size)?;
+                tx.execute(
+                    "INSERT INTO content_fts (session_id, body) VALUES (?1, ?2)",
+                    params![s.id, body],
+                )?;
                 parsed_rows += 1;
             }
         }
         for path in &to_delete {
+            tx.execute(
+                "DELETE FROM content_fts WHERE session_id IN \
+                 (SELECT id FROM sessions WHERE file_path = ?1)",
+                params![path],
+            )?;
             tx.execute("DELETE FROM sessions WHERE file_path = ?1", params![path])?;
         }
         tx.commit()?;
@@ -232,6 +263,29 @@ impl Index {
             total: candidates.len(),
         })
     }
+}
+
+/// The searchable body for a session: its first messages (capped), joined.
+/// Reused for the content FTS index. Empty on a read error.
+fn content_body(s: &Session) -> String {
+    let page = match transcript::read(s, 0, FTS_MSG_CAP) {
+        Ok(p) => p,
+        Err(_) => return String::new(),
+    };
+    let mut buf = String::new();
+    for m in &page.messages {
+        if !buf.is_empty() {
+            buf.push('\n');
+        }
+        buf.push_str(&m.text);
+        if buf.len() >= FTS_BODY_MAX_CHARS {
+            break;
+        }
+    }
+    if buf.chars().count() > FTS_BODY_MAX_CHARS {
+        buf = buf.chars().take(FTS_BODY_MAX_CHARS).collect();
+    }
+    buf
 }
 
 /// Unique row key. Shell logs split into one row per directory, so they include

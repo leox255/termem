@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 use termem::index::Index;
 use termem::model::Source;
-use termem::query::{query, Scope};
+use termem::query::{query, search, Scope};
 use termem::scan::ScanRoots;
 
 fn temp_db(tag: &str) -> PathBuf {
@@ -213,6 +213,68 @@ fn reindex_evicts_stale_shell_directories() {
 
     let _ = std::fs::remove_file(&db);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn content_fts_finds_body_matches() {
+    let db = temp_db("fts");
+    let _ = std::fs::remove_file(&db);
+    let idx = Index::open_with_roots(
+        &db,
+        ScanRoots {
+            claude: None,
+            codex: None,
+            gemini: None,
+            opencode: None,
+            shell: None,
+        },
+    )
+    .unwrap();
+    let conn = idx.conn();
+    conn.execute(
+        "INSERT INTO sessions
+            (key,file_path,id,source,cwd,title,first_prompt,last_prompt,
+             model,git_branch,started_at,updated_at,msg_count,file_mtime,file_size)
+         VALUES ('k','/f','s1','claude','/work','A short title','first prompt','last',
+                 NULL,NULL,0,1,1,0,0)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO content_fts (session_id, body)
+         VALUES ('s1', 'we set up nginx as a reverse proxy in front of pgbouncer')",
+        [],
+    )
+    .unwrap();
+
+    // A word that appears only in the body is found via the FTS index.
+    let body = search(conn, "pgbouncer", "/work", Scope::Subtree, &[], 10).unwrap();
+    assert_eq!(body.len(), 1);
+    assert_eq!(body[0].id, "s1");
+
+    // A word only in the title is still found via metadata.
+    assert!(search(conn, "title", "/work", Scope::Subtree, &[], 10)
+        .unwrap()
+        .iter()
+        .any(|s| s.id == "s1"));
+
+    // Multiple content words are AND-ed.
+    assert_eq!(
+        search(conn, "nginx pgbouncer", "/work", Scope::Subtree, &[], 10)
+            .unwrap()
+            .len(),
+        1
+    );
+
+    // Absent term -> no results; other directory -> out of scope.
+    assert!(search(conn, "kubernetes", "/work", Scope::Subtree, &[], 10)
+        .unwrap()
+        .is_empty());
+    assert!(search(conn, "pgbouncer", "/other", Scope::Subtree, &[], 10)
+        .unwrap()
+        .is_empty());
+
+    let _ = std::fs::remove_file(&db);
 }
 
 #[test]
