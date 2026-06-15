@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="dark" />
+<meta name="theme-color" content="#0d1117" />
 <title>termem — cross-agent memory for your terminal</title>
 <meta name="description" content="termem indexes every Claude Code, Codex, Gemini, opencode, and shell session by the directory it ran in, so you can recall, search, and resume them. Shared memory via MCP, no model calls." />
 <link rel="icon" href="favicon.svg" type="image/svg+xml" />
@@ -20,9 +22,11 @@
 <meta name="twitter:image" content="https://termem.pages.dev/og.png" />
 <style>
   :root{
-    --ghbg:#ffffff; --canvas:#f6f8fa; --border:#d1d9e0; --border-muted:#d8dee4;
-    --fg:#1f2328; --muted:#59636e; --blue:#0969da; --green:#1f883d; --green-hover:#1a7f37;
-    --chip-bg:#ddf4ff; --chip-fg:#0969da;
+    color-scheme:dark;
+    /* GitHub dark palette (dark default) */
+    --ghbg:#0d1117; --canvas:#161b22; --border:#30363d; --border-muted:#21262d;
+    --fg:#e6edf3; --muted:#8b949e; --blue:#4493f8; --green:#238636; --green-hover:#2ea043;
+    --chip-bg:rgba(56,139,253,0.15); --chip-fg:#4493f8;
     --term-bg:#0d1117; --term-bar:#161b22; --term-fg:#e6edf3; --term-muted:#8b949e;
     --term-green:#3fb950; --term-cyan:#56d4dd; --term-blue:#58a6ff; --term-yellow:#e3b341;
     --term-border:#30363d;
@@ -153,7 +157,7 @@
   /* readme card */
   .readme{border:1px solid var(--border);border-radius:6px;margin-top:24px;background:var(--ghbg)}
   .readme-tabs{display:flex;align-items:center;gap:10px;padding:8px 16px;border-bottom:1px solid var(--border)}
-  .readme-tab{display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:600;color:var(--fg);padding:8px 4px;border-bottom:2px solid #fd8c73;margin-bottom:-9px}
+  .readme-tab{display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:600;color:var(--fg);padding:8px 4px;border-bottom:2px solid #f78166;margin-bottom:-9px}
   .md{padding:24px 28px 36px;font-size:16px;color:var(--fg)}
   .md h1,.md h2{margin:24px 0 16px;padding-bottom:.3em;border-bottom:1px solid var(--border-muted);font-weight:600;line-height:1.25}
   .md h1{font-size:2em;margin-top:0}
@@ -175,7 +179,7 @@
   .aside p.desc{font-size:14px;color:var(--fg);margin:8px 0 14px}
   .topics{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
   .topic{background:var(--chip-bg);color:var(--chip-fg);font-size:12px;font-weight:500;padding:3px 10px;border-radius:999px;cursor:pointer}
-  .topic:hover{background:#b6e3ff;text-decoration:none}
+  .topic:hover{background:var(--blue);color:#0d1117;text-decoration:none}
   .meta-row{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--muted);padding:5px 0}
   .meta-row a{color:var(--muted);font-weight:500}
   .meta-row a:hover{color:var(--blue)}
