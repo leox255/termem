@@ -1,0 +1,15 @@
+{
+  "name": "termem",
+  "owner": { "name": "leox255", "url": "https://github.com/leox255" },
+  "plugins": [
+    {
+      "name": "termem",
+      "source": "./plugin",
+      "description": "Cross-agent terminal memory and session management. Bundles the termem skill and the termem MCP server (recall, search, get_session, save_summary, stats).",
+      "category": "productivity",
+      "version": "0.5.2",
+      "homepage": "https://github.com/leox255/termem",
+      "keywords": ["memory", "mcp", "sessions", "claude-code", "codex", "gemini", "opencode"]
+    }
+  ]
+}

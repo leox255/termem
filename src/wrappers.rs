@@ -2,7 +2,7 @@
 //! `SKILL.md` so the workflow and safety contract never drift between agents.
 //! `termem init <agent>` prints the right wrapper for each.
 
-const CLAUDE_SKILL: &str = include_str!("../skill/SKILL.md");
+const CLAUDE_SKILL: &str = include_str!("../plugin/skills/termem/SKILL.md");
 
 /// The workflow body (everything after the YAML frontmatter).
 fn body() -> &'static str {

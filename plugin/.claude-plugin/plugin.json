@@ -1,0 +1,14 @@
+{
+  "name": "termem",
+  "version": "0.5.2",
+  "description": "Cross-agent terminal memory: recall, search, and resume Claude Code, Codex, Gemini, opencode, and shell sessions by directory. No model calls, no network.",
+  "author": { "name": "leox255", "url": "https://github.com/leox255" },
+  "homepage": "https://github.com/leox255/termem",
+  "keywords": ["memory", "mcp", "sessions", "recall", "resume"],
+  "mcpServers": {
+    "termem": {
+      "command": "termem",
+      "args": ["mcp"]
+    }
+  }
+}

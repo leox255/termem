@@ -1,0 +1,90 @@
+# Distributing termem
+
+How to publish termem so people can install it and load the skill + MCP server.
+
+## 1. Release binaries (GitHub Releases)
+
+`.github/workflows/release.yml` builds macOS (arm64 + x86_64) and Linux
+(x86_64 + arm64) binaries and attaches them to the release when you push a
+version tag:
+
+```
+git tag v0.5.2
+git push origin v0.5.2
+```
+
+The workflow uploads `termem-<target>.tar.gz` (+ a `.sha256`) to the release at
+https://github.com/leox255/termem/releases. Users download, extract, and put
+`termem` on their `PATH`.
+
+Windows is not built yet: the binary compiles there, but the default data
+locations are Unix paths and the shell hook is zsh/bash only.
+
+### Homebrew (after the first release exists)
+
+Create a tap repo `leox255/homebrew-tap` with a formula like:
+
+```ruby
+class Termem < Formula
+  desc "Cross-agent terminal memory and session management"
+  homepage "https://github.com/leox255/termem"
+  version "0.5.2"
+  on_macos do
+    on_arm do
+      url "https://github.com/leox255/termem/releases/download/v0.5.2/termem-aarch64-apple-darwin.tar.gz"
+      sha256 "<from the .sha256 asset>"
+    end
+    on_intel do
+      url "https://github.com/leox255/termem/releases/download/v0.5.2/termem-x86_64-apple-darwin.tar.gz"
+      sha256 "<from the .sha256 asset>"
+    end
+  end
+  def install
+    bin.install "termem"
+  end
+end
+```
+
+Then `brew install leox255/tap/termem`.
+
+## 2. Claude Code plugin
+
+This repo is itself a plugin marketplace:
+
+- `.claude-plugin/marketplace.json` lists the `termem` plugin.
+- `plugin/` is the plugin: `.claude-plugin/plugin.json` (registers the MCP
+  server) and `skills/termem/SKILL.md` (the skill, the single canonical copy the
+  binary also embeds).
+
+Users install both the skill and the MCP server in one step:
+
+```
+/plugin marketplace add leox255/termem
+/plugin install termem@termem
+```
+
+The plugin still needs the `termem` binary on `PATH` (the MCP server is
+`termem mcp`).
+
+## 3. MCP registries
+
+`server.json` is the manifest for the official registry
+(registry.modelcontextprotocol.io).
+
+Prerequisite: the registry installs the server from a package registry. The
+`server.json` here declares `registryType: cargo`, so it requires the crate to
+be published first:
+
+```
+cargo publish            # publishes termem to crates.io
+mcp-publisher login github
+mcp-publisher publish     # reads ./server.json
+```
+
+If you do not want to publish to crates.io, the alternatives are an npm wrapper
+package (that downloads the release binary) or an MCPB bundle, then change
+`registryType` accordingly.
+
+Once on the official registry, downstream directories (Smithery, mcp.so,
+PulseMCP, the GitHub MCP registry) ingest it automatically, usually within a
+week. They can also be submitted manually at their own sites.

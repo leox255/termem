@@ -22,6 +22,8 @@ Install from GitHub:
 cargo install --git https://github.com/leox255/termem
 ```
 
+Or download a prebuilt macOS / Linux binary from the [releases page](https://github.com/leox255/termem/releases), extract it, and put `termem` on your `PATH`.
+
 Or from a local clone:
 
 ```
@@ -74,6 +76,13 @@ Register it with Claude Code (user scope, so it works in every project):
 ```
 claude mcp add termem --scope user -- termem mcp
 mkdir -p ~/.claude/skills/termem && termem init claude > ~/.claude/skills/termem/SKILL.md
+```
+
+Or get the skill and MCP server together as a plugin (still needs the `termem` binary on your `PATH`):
+
+```
+/plugin marketplace add leox255/termem
+/plugin install termem@termem
 ```
 
 Where they load from:
