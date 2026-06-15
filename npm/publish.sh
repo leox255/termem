@@ -11,18 +11,19 @@ VERSION="${1:?usage: publish.sh <version>}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DIST="${DIST:-$ROOT/dist}"
 
-# rust target : node platform : node arch
+# rust target : node platform : node arch : binary name
 targets=(
-  "aarch64-apple-darwin:darwin:arm64"
-  "x86_64-apple-darwin:darwin:x64"
-  "x86_64-unknown-linux-gnu:linux:x64"
-  "aarch64-unknown-linux-gnu:linux:arm64"
+  "aarch64-apple-darwin:darwin:arm64:termem"
+  "x86_64-apple-darwin:darwin:x64:termem"
+  "x86_64-unknown-linux-gnu:linux:x64:termem"
+  "aarch64-unknown-linux-gnu:linux:arm64:termem"
+  "x86_64-pc-windows-msvc:win32:x64:termem.exe"
 )
 
 deps_json=""
 sep=""
 for entry in "${targets[@]}"; do
-  IFS=":" read -r target os cpu <<<"$entry"
+  IFS=":" read -r target os cpu binname <<<"$entry"
   tarball="$DIST/termem-$target.tar.gz"
   if [ ! -f "$tarball" ]; then
     echo "skip $target (no $tarball)"
@@ -31,7 +32,7 @@ for entry in "${targets[@]}"; do
   pkg="@termem/$os-$cpu"
   work="$(mktemp -d)"
   tar -xzf "$tarball" -C "$work"
-  chmod +x "$work/termem"
+  chmod +x "$work/$binname"
   cat >"$work/package.json" <<EOF
 {
   "name": "$pkg",
@@ -41,7 +42,7 @@ for entry in "${targets[@]}"; do
   "repository": { "type": "git", "url": "git+https://github.com/leox255/termem.git" },
   "os": ["$os"],
   "cpu": ["$cpu"],
-  "files": ["termem"]
+  "files": ["$binname"]
 }
 EOF
   echo "publishing $pkg@$VERSION"

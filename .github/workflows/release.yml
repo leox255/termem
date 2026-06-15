@@ -22,12 +22,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: macos-14, target: aarch64-apple-darwin }
+          - { os: macos-14, target: aarch64-apple-darwin, bin: termem }
           # Cross-compile the Intel-mac binary on Apple Silicon: GitHub's
           # Intel (macos-13) runners are scarce and can queue for hours.
-          - { os: macos-14, target: x86_64-apple-darwin }
-          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
-          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
+          - { os: macos-14, target: x86_64-apple-darwin, bin: termem }
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, bin: termem }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, bin: termem }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, bin: termem.exe }
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -37,9 +38,10 @@ jobs:
       - name: Build
         run: cargo build --release --locked --target ${{ matrix.target }}
       - name: Package
+        shell: bash
         run: |
           dir="target/${{ matrix.target }}/release"
-          tar -C "$dir" -czf "termem-${{ matrix.target }}.tar.gz" termem
+          tar -C "$dir" -czf "termem-${{ matrix.target }}.tar.gz" "${{ matrix.bin }}"
           shasum -a 256 "termem-${{ matrix.target }}.tar.gz" > "termem-${{ matrix.target }}.tar.gz.sha256"
       - name: Attach to release
         uses: softprops/action-gh-release@v2

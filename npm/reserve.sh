@@ -19,6 +19,7 @@ names=(
   @termem/darwin-x64
   @termem/linux-x64
   @termem/linux-arm64
+  @termem/win32-x64
 )
 
 for name in "${names[@]}"; do

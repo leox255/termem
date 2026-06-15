@@ -6,10 +6,11 @@
 const { spawnSync } = require("node:child_process");
 
 const pkg = `@termem/${process.platform}-${process.arch}`;
+const binName = process.platform === "win32" ? "termem.exe" : "termem";
 
 let binary;
 try {
-  binary = require.resolve(`${pkg}/termem`);
+  binary = require.resolve(`${pkg}/${binName}`);
 } catch {
   console.error(
     `termem: no prebuilt binary for ${process.platform}-${process.arch}.\n` +
