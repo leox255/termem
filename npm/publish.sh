@@ -11,6 +11,16 @@ VERSION="${1:?usage: publish.sh <version>}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DIST="${DIST:-$ROOT/dist}"
 
+# npm refuses to publish over an existing version, so a tag re-push or a CI
+# re-run would otherwise fail the job. Skip any package@version already on the
+# registry: that makes re-runs safe no-ops and recovers a partial publish (only
+# the missing packages get pushed).
+already_published() {
+  local v
+  v="$(npm view "$1" version 2>/dev/null || true)"
+  [ -n "$v" ]
+}
+
 # rust target : node platform : node arch : binary name
 targets=(
   "aarch64-apple-darwin:darwin:arm64:termem"
@@ -45,8 +55,12 @@ for entry in "${targets[@]}"; do
   "files": ["$binname"]
 }
 EOF
-  echo "publishing $pkg@$VERSION"
-  (cd "$work" && npm publish --access public)
+  if already_published "$pkg@$VERSION"; then
+    echo "skip $pkg@$VERSION (already on npm)"
+  else
+    echo "publishing $pkg@$VERSION"
+    (cd "$work" && npm publish --access public)
+  fi
   deps_json+="${sep}    \"$pkg\": \"$VERSION\""
   sep=$',\n'
 done
@@ -78,6 +92,10 @@ $deps_json
   }
 }
 EOF
-echo "publishing @termem/cli@$VERSION"
-(cd "$main" && npm publish --access public)
+if already_published "@termem/cli@$VERSION"; then
+  echo "skip @termem/cli@$VERSION (already on npm)"
+else
+  echo "publishing @termem/cli@$VERSION"
+  (cd "$main" && npm publish --access public)
+fi
 echo "done"
