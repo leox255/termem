@@ -1,10 +1,11 @@
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
+use std::io::IsTerminal;
 use std::path::PathBuf;
 use termem::index::Index;
 use termem::model::{rel_time, Session, Source};
 use termem::query::{self, Scope};
-use termem::{mcp, resume, shellhook, tui, wrappers};
+use termem::{logo, mcp, resume, shellhook, tui, wrappers};
 
 #[derive(Parser)]
 #[command(
@@ -194,7 +195,10 @@ fn cmd_tui(scope: ScopeArgs) -> Result<()> {
     let sessions = query::query(idx.conn(), &cwd, sc, &sources, None, 500)?;
     drop(idx);
     if sessions.is_empty() {
-        println!("No sessions found for {cwd}.\nTry `termem ls --all` to see everything.");
+        if std::io::stdout().is_terminal() {
+            print!("{}", logo::ansi_banner(0));
+        }
+        println!("\nNo sessions found for {cwd}.\nTry `termem ls --all` to see everything.");
         return Ok(());
     }
     match tui::run(sessions, cwd)? {

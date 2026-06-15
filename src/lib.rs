@@ -6,6 +6,7 @@
 //! prompt. termem never calls an LLM.
 
 pub mod index;
+pub mod logo;
 pub mod mcp;
 pub mod memory;
 pub mod model;
