@@ -1,8 +1,16 @@
 # termem
 
-See and resume your Claude Code, Codex, opencode, Gemini, and shell sessions for the directory you are in. It also runs as an MCP server, so your coding agents share memory across sessions and across tools.
+**Cross-agent memory and session management for your terminal.**
 
-Run `termem` in a project folder and you get a list of every session that started there or in a subfolder, with its title, age, and message count. Pick one and it reopens in the right tool and directory.
+Coding agents forget everything between sessions, and none of them can see what the others did. termem is the shared memory layer underneath them all. It indexes every Claude Code, Codex, Gemini, opencode, and shell session by the directory it ran in, so you can:
+
+- **Recall** prior work in a directory through the MCP server. An agent reads what happened there before, even sessions a different agent created, and picks up where you left off.
+- **Resume** the exact past session in the right tool and directory.
+- **Search** across everything by message content, not just titles.
+
+termem never calls a model and never makes a network request. Your agents do the reasoning; termem does the retrieval and storage.
+
+Run `termem` in a project folder to get a list of every session that started there or in a subfolder, with its title, age, and message count. Pick one and it reopens in the right tool and directory.
 
 ## Install
 
