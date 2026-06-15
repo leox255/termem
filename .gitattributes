@@ -1,0 +1,5 @@
+# Force LF in the working tree on every platform. Files embedded at compile
+# time via include_str! (e.g. plugin/skills/termem/SKILL.md and the shell
+# hooks) must be byte-identical across OSes; a Windows checkout would otherwise
+# convert them to CRLF and break the embedded content (and its tests).
+* text=auto eol=lf
