@@ -47,10 +47,10 @@ end
 
 Then `brew install leox255/tap/termem`.
 
-## 2. npm (`npx termem-cli`)
+## 2. npm (`npx @termem/cli`)
 
 The release workflow also publishes npm packages so anyone with Node can run
-`npx termem-cli` (no Rust). It uses the esbuild-style per-platform packages
+`npx @termem/cli` (no Rust). It uses the esbuild-style per-platform packages
 (see `npm/README.md` and `npm/publish.sh`), so there is no postinstall
 download.
 
@@ -67,26 +67,27 @@ so there is a one-time, token-free bootstrap (run locally):
    ```
    bash npm/reserve.sh
    ```
-3. Add a trusted publisher for EACH package. For every one of `termem-cli`,
-   `termem-cli-darwin-arm64`, `termem-cli-darwin-x64`, `termem-cli-linux-x64`,
-   `termem-cli-linux-arm64`, on npmjs.com open the package -> Settings ->
+3. Add a trusted publisher for EACH package. For every one of `@termem/cli`,
+   `@termem/darwin-arm64`, `@termem/darwin-x64`, `@termem/linux-x64`,
+   `@termem/linux-arm64`, on npmjs.com open the package -> Settings ->
    Trusted Publisher -> GitHub Actions and enter: organization `leox255`,
    repository `termem`, workflow filename `release.yml`, environment blank.
 
    Or script it with the CLI (npm >= 11.10.0):
    ```
-   for p in termem-cli termem-cli-darwin-arm64 termem-cli-darwin-x64 termem-cli-linux-x64 termem-cli-linux-arm64; do
-     npm trust github "$p" --repo leox255/termem --file release.yml
+   for p in @termem/cli @termem/darwin-arm64 @termem/darwin-x64 @termem/linux-x64 @termem/linux-arm64; do
+     npm trust github "$p" --repo leox255/termem --file release.yml -y
    done
    ```
    (check `npm trust github --help` for the exact flags on your npm version).
 4. Cut a release (push a `v*` tag). The `npm` job publishes all five packages
    keylessly via OIDC.
 
-The npm package is `termem-cli` (the bare `termem` is blocked by npm's
-similarity filter), but it still installs a plain `termem` command. So
-`npx termem-cli`, `npm install -g termem-cli` (gives `termem`), and MCP configs
-like `{ "command": "npx", "args": ["-y", "termem-cli", "mcp"] }` work on
+The npm package is `@termem/cli`, published under the `termem` org (the bare
+`termem` is blocked by npm's similarity filter, and scoped names are exempt).
+It still installs a plain `termem` command, so `npx @termem/cli`,
+`npm install -g @termem/cli` (gives `termem`), and MCP configs like
+`{ "command": "npx", "args": ["-y", "@termem/cli", "mcp"] }` work on
 macOS/Linux.
 
 ## 3. Claude Code plugin

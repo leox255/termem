@@ -14,11 +14,11 @@
 set -euo pipefail
 
 names=(
-  termem-cli
-  termem-cli-darwin-arm64
-  termem-cli-darwin-x64
-  termem-cli-linux-x64
-  termem-cli-linux-arm64
+  @termem/cli
+  @termem/darwin-arm64
+  @termem/darwin-x64
+  @termem/linux-x64
+  @termem/linux-arm64
 )
 
 for name in "${names[@]}"; do
