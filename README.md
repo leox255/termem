@@ -20,6 +20,13 @@ With a Rust toolchain (https://rustup.rs):
 cargo install termem
 ```
 
+Or with Node, no Rust required:
+
+```
+npx @termem/cli              # run it directly
+npm install -g @termem/cli   # or install the `termem` command
+```
+
 Or download a prebuilt macOS / Linux binary from the [releases page](https://github.com/leox255/termem/releases), extract it, and put `termem` on your `PATH`.
 
 From source:
@@ -75,6 +82,8 @@ Register it with Claude Code (user scope, so it works in every project):
 claude mcp add termem --scope user -- termem mcp
 mkdir -p ~/.claude/skills/termem && termem init claude > ~/.claude/skills/termem/SKILL.md
 ```
+
+No binary on your `PATH`? Use `npx -y @termem/cli mcp` as the command instead of `termem mcp`.
 
 Or get the skill and MCP server together as a plugin (still needs the `termem` binary on your `PATH`):
 
