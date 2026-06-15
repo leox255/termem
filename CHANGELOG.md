@@ -2,6 +2,21 @@
 
 All notable changes to termem are documented here.
 
+## [0.4.0] - 2026-06-15
+
+### Added
+- `termem mcp`: an MCP server over stdio exposing `recall`, `search`,
+  `get_session`, `save_summary`, and `stats`, so agents recall prior work and
+  build shared memory across sessions and across tools. No model calls, no
+  network.
+- Durable agent-authored summaries in termem's own store (never the source
+  files), with cached / needs_summary / stale freshness tracking.
+- `termem init <agent>` emits the skill / AGENTS.md / GEMINI.md wrapper from one
+  canonical `SKILL.md`, so the workflow and safety contract never drift between
+  agents.
+- Environment overrides `TERMEM_DB` and `TERMEM_<source>_DIR` for custom or
+  synced locations.
+
 ## [0.3.0] - 2026-06-15
 
 ### Added
