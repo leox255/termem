@@ -2,6 +2,18 @@
 
 All notable changes to termem are documented here.
 
+## [0.5.0] - 2026-06-15
+
+### Added
+- Content search: an FTS5 index over message bodies. `search` (the MCP tool and
+  CLI `ls -s`) now finds sessions by what was discussed, not just titles and
+  prompts. The index is maintained incrementally alongside the session cache,
+  with a per-session body cap so a giant transcript stays bounded.
+
+### Fixed
+- The `--source` filter was ignored when 3 or 4 tools were selected (a stale
+  bound from when there were only three sources); it now applies for any subset.
+
 ## [0.4.0] - 2026-06-15
 
 ### Added
