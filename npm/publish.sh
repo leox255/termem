@@ -4,11 +4,14 @@
 # optionalDependencies point at them. Binaries are read from ./dist as
 # `termem-<rust-target>.tar.gz` (downloaded from the GitHub release).
 #
-# Usage: npm/publish.sh <version>   e.g. npm/publish.sh 0.5.2
+# Usage: npm/publish.sh [version]   e.g. npm/publish.sh 0.6.0
+# Version defaults to the one in Cargo.toml (the single source of truth); pass an
+# explicit version only to override it.
 set -euo pipefail
 
-VERSION="${1:?usage: publish.sh <version>}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+VERSION="${1:-$(grep -m1 '^version' "$ROOT/Cargo.toml" | sed -E 's/.*"([^"]+)".*/\1/')}"
+[ -n "$VERSION" ] || { echo "could not determine version (pass it explicitly)" >&2; exit 1; }
 DIST="${DIST:-$ROOT/dist}"
 
 # npm refuses to publish over an existing version, so a tag re-push or a CI

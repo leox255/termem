@@ -15,8 +15,35 @@ permissions:
   contents: write
 
 jobs:
+  # Single source of truth for the release version: Cargo.toml. The crates.io
+  # publish and the binary's --version already come from it; this job makes npm
+  # and the MCP manifest follow, and fails the whole release fast if the git tag
+  # or server.json disagree (so you only ever edit the version in Cargo.toml).
+  version:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        shell: bash
+        run: |
+          ver="$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$ver" != "$tag" ]; then
+            echo "::error::git tag v$tag does not match Cargo.toml version $ver"; exit 1
+          fi
+          srv="$(grep -m1 '"version"' server.json | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
+          if [ "$ver" != "$srv" ]; then
+            echo "::error::server.json version $srv does not match Cargo.toml version $ver"; exit 1
+          fi
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "Release version $ver — tag, Cargo.toml, and server.json all agree."
+
   build:
     name: ${{ matrix.target }}
+    needs: version
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -59,7 +86,7 @@ jobs:
 
   npm:
     name: npm publish
-    needs: build
+    needs: [version, build]
     runs-on: ubuntu-latest
     permissions:
       id-token: write   # OIDC token for npm trusted publishing (no NPM_TOKEN)
@@ -78,6 +105,6 @@ jobs:
           pattern: bin-*
           merge-multiple: true
       - name: Publish to npm (OIDC trusted publishing)
-        run: bash npm/publish.sh "${GITHUB_REF_NAME#v}"
+        run: bash npm/publish.sh "${{ needs.version.outputs.version }}"
         env:
           NPM_CONFIG_PROVENANCE: "true"
