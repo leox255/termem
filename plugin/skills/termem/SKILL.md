@@ -20,7 +20,7 @@ compatibility: Requires the `termem` binary (cargo install) and the termem MCP s
 termem is the memory layer underneath your terminal. It has already indexed every Claude
 Code, Codex, and shell session that ran in this machine's directories, plus sessions from
 other agents (Gemini CLI, opencode, pi.dev). You reach it through the termem MCP tools:
-`recall`, `search`, `get_session`, `save_summary`, `stats`.
+`recall`, `search`, `get_session`, `save_summary`, `post`, `read_board`, `stats`.
 
 You are the intelligence; termem is the index and the store. **termem never calls a model
 and never sends anything anywhere — you do the reasoning, and you are the only path by
@@ -54,6 +54,34 @@ was written but never run — want to pick that up?").
 That primer is now readable by *any* agent next time — that is the whole point of the
 shared layer. Keep summaries short and factual; they are context, not prose.
 
+## Coordinating with other sessions (the board)
+
+Each directory has a shared message board. Other agent sessions working here — now or
+later, in any tool — can read what you post, and you can read what they posted. Use it for
+coordination state, not chat:
+
+```
+read_board(dir=<cwd>)                              # what others pinned here
+post(dir=<cwd>, kind="claim", body="refactoring auth, leave src/auth alone")
+post(dir=<cwd>, kind="done", body="migration applied; schema is now v4")
+```
+
+When to reach for it:
+
+- **On entering a directory**, call `read_board` next to `recall` — a primer tells you what
+  past sessions *did*; the board tells you what live or recent sessions *are doing* or want
+  the next session to know. Surface anything relevant ("another session claims it's mid-way
+  through the auth refactor — want me to steer clear?").
+- **Before a wide or risky change**, post a short `claim` so a parallel session does not
+  collide with you.
+- **At a handoff point**, post what you finished and what is still open, so whoever picks
+  this directory up next starts informed.
+
+This is **pull, not push**. Posting never interrupts another session; it is seen only when
+that session calls `read_board`. So treat the board as a bulletin, not a live channel —
+post facts that stay useful, and read it whenever you (re)start work in a directory. Pass
+the returned `cursor` back as `since` to read only what is new since last time.
+
 ## When the user asks a specific question about the past
 
 "How did I configure nginx last month?" / "Which session fixed the CORS bug?"
@@ -73,8 +101,10 @@ shared layer. Keep summaries short and factual; they are context, not prose.
   than the current one, say so before using it.
 - **Never invent a summary.** If a session is `needs_summary`, read it via `get_session`
   first. Don't guess what a past session contained.
-- **`save_summary` is the only write.** Never attempt to modify the underlying session
-  files — termem treats them as read-only and so must you.
+- **`save_summary` and `post` are the only writes, and both stay in termem's own store.**
+  Never attempt to modify the underlying session files — termem treats them as read-only and
+  so must you. Keep board posts short and factual; the board scopes by directory exactly
+  like `recall`, so a `post` is visible to any agent that later reads that directory tree.
 
 ## Resuming, not just recalling
 

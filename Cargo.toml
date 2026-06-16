@@ -1,6 +1,6 @@
 [package]
 name = "termem"
-version = "0.5.3"
+version = "0.6.0"
 edition = "2021"
 description = "Cross-agent terminal memory and session management: recall, search, and resume Claude Code, Codex, Gemini, opencode, and shell sessions by directory."
 license = "MIT"

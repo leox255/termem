@@ -96,6 +96,7 @@ pub fn parse_reader<R: BufRead>(
                 started_at: started,
                 updated_at: updated,
                 msg_count: a.count,
+                bypass: false,
             }
         })
         .collect()

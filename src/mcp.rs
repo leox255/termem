@@ -5,7 +5,7 @@
 use crate::index::Index;
 use crate::model::{Session, Source};
 use crate::query::{self, Scope};
-use crate::{memory, transcript};
+use crate::{board, memory, transcript};
 use anyhow::Result;
 use serde_json::{json, Value};
 use std::io::{BufRead, Write};
@@ -106,6 +106,8 @@ fn handle_call(index: &mut Index, id: Option<Value>, req: &Value) -> Value {
         "recall" => tool_recall(index, &args),
         "get_session" => tool_get_session(index, &args),
         "save_summary" => tool_save_summary(index, &args),
+        "post" => tool_post(index, &args),
+        "read_board" => tool_read_board(index, &args),
         "stats" => tool_stats(index, &args),
         other => return tool_err(id, &format!("unknown tool: {other}")),
     };
@@ -295,6 +297,47 @@ fn tool_save_summary(index: &Index, args: &Value) -> Result<Value> {
     Ok(json!({"ok": true, "id": id, "known_session": known}))
 }
 
+fn tool_post(index: &Index, args: &Value) -> Result<Value> {
+    let body = arg_str(args, "body").ok_or_else(|| anyhow::anyhow!("body is required"))?;
+    let dir = cwd_arg(args);
+    let kind = arg_str(args, "kind").unwrap_or("note");
+    let author = arg_str(args, "author");
+    let id = board::post(index.conn(), &dir, author, kind, body)?;
+    Ok(json!({"ok": true, "id": id, "dir": dir, "kind": kind}))
+}
+
+fn tool_read_board(index: &Index, args: &Value) -> Result<Value> {
+    let dir = cwd_arg(args);
+    let scope = scope_arg(args, Scope::Subtree);
+    let since = arg_i64(args, "since", 0);
+    let kind = arg_str(args, "kind");
+    let limit = arg_i64(args, "limit", 50);
+    let posts = board::read(index.conn(), &dir, scope, since, kind, limit)?;
+    // Newest first; the latest timestamp is the cursor to pass back as `since`.
+    let cursor = posts.iter().map(|p| p.created_at).max().unwrap_or(since);
+    let items: Vec<Value> = posts
+        .iter()
+        .map(|p| {
+            json!({
+                "id": p.id,
+                "author": p.author,
+                "kind": p.kind,
+                "body": p.body,
+                "dir": p.cwd,
+                "at": iso(p.created_at),
+                "ts": p.created_at,
+            })
+        })
+        .collect();
+    Ok(json!({
+        "dir": dir,
+        "scope": scope_name(scope),
+        "posts": items,
+        "cursor": cursor,
+        "note": "pass `cursor` back as `since` next time to read only newer posts",
+    }))
+}
+
 fn tool_stats(index: &Index, args: &Value) -> Result<Value> {
     let dir = cwd_arg(args);
     let scope = scope_arg(args, Scope::Subtree);
@@ -371,6 +414,34 @@ fn tool_list() -> Value {
                     "tags": {"type": "array", "items": {"type": "string"}}
                 },
                 "required": ["id", "summary"]
+            }
+        },
+        {
+            "name": "post",
+            "description": "Pin a short note to this directory's shared board so other agent sessions working here can read it later. Use for coordination state: a claim ('refactoring auth, leave it'), a handoff ('migration written but unrun'), or a fact worth surfacing to the next session. Async only: posting does not interrupt another session; it is read when that session calls read_board.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "body": {"type": "string", "description": "the note (keep it short and factual)"},
+                    "kind": {"type": "string", "description": "note | task | claim | done (free-form; default note)"},
+                    "author": {"type": "string", "description": "who is posting, e.g. agent/session label (optional)"},
+                    "dir": {"type": "string", "description": "board directory (default cwd); post and read from the same anchor, usually the repo root"}
+                },
+                "required": ["body"]
+            }
+        },
+        {
+            "name": "read_board",
+            "description": "Read notes other sessions pinned to this directory's board. Call on entering a directory, alongside recall, to pick up coordination state. Returns a `cursor`; pass it back as `since` next time to get only newer posts.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "dir": {"type": "string", "description": "board directory (default cwd)"},
+                    "scope": {"type": "string", "enum": ["here","tree","all"], "description": "here=exact dir, tree=dir+subfolders (default), all=whole machine"},
+                    "since": {"type": "integer", "description": "epoch-ms cursor from a prior read; only posts newer than this are returned (default 0 = all)"},
+                    "kind": {"type": "string", "description": "filter to one kind, e.g. 'claim' (optional)"},
+                    "limit": {"type": "integer", "description": "max posts (default 50)"}
+                }
             }
         },
         {

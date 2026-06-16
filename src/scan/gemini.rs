@@ -208,6 +208,7 @@ pub fn parse_reader<R: BufRead>(
         started_at: started,
         updated_at: mtime_ms,
         msg_count: count,
+        bypass: false,
     }]
 }
 

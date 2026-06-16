@@ -45,6 +45,7 @@ pub fn read_sessions(conn: &Connection, file_path: &str) -> Result<Vec<Session>>
             started_at: r.get::<_, i64>(3)?,
             updated_at: r.get::<_, i64>(4)?,
             msg_count: r.get::<_, i64>(5)?,
+            bypass: false,
         })
     })?;
     let mut out = Vec::new();

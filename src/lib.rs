@@ -5,6 +5,7 @@
 //! (Claude `ai-title`, Codex `thread_name`) or derived from the first user
 //! prompt. termem never calls an LLM.
 
+pub mod board;
 pub mod index;
 pub mod logo;
 pub mod mcp;

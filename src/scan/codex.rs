@@ -93,6 +93,8 @@ pub fn parse_reader<R: BufRead>(
     let mut first_prompt: Option<String> = None;
     let mut first_prompt_fallback: Option<String> = None;
     let mut last_user: Option<String> = None;
+    let mut approval: Option<String> = None;
+    let mut sandbox: Option<String> = None;
     let mut started = i64::MAX;
     let mut updated = 0i64;
     let mut msg_count = 0i64;
@@ -146,6 +148,14 @@ pub fn parse_reader<R: BufRead>(
                         if let Some(c) = p.get("cwd").and_then(|x| x.as_str()) {
                             cwd = Some(c.to_string());
                         }
+                    }
+                    // Approval + sandbox are re-stated each turn; keep the last
+                    // (the mode the session ended in).
+                    if let Some(a) = p.get("approval_policy").and_then(|x| x.as_str()) {
+                        approval = Some(a.to_string());
+                    }
+                    if let Some(t) = p.pointer("/sandbox_policy/type").and_then(|x| x.as_str()) {
+                        sandbox = Some(t.to_string());
                     }
                 }
             }
@@ -221,6 +231,12 @@ pub fn parse_reader<R: BufRead>(
         started_at: started,
         updated_at: updated,
         msg_count,
+        // The `--dangerously-bypass-approvals-and-sandbox` flag is exactly
+        // approval `never` + sandbox `danger-full-access`. Require both: a
+        // danger sandbox alone (with approvals on) came from `-s`, not the
+        // bypass flag, and must not have approvals silently disabled on resume.
+        bypass: approval.as_deref() == Some("never")
+            && sandbox.as_deref() == Some("danger-full-access"),
     })
 }
 
@@ -307,6 +323,41 @@ mod tests {
         )
         .unwrap();
         assert_eq!(s.title, "Nice Title");
+    }
+
+    #[test]
+    fn detects_bypass_when_never_and_danger_full_access() {
+        let lines = r#"{"type":"session_meta","timestamp":"2026-06-01T13:20:08.918Z","payload":{"id":"019e8357-3f8f-77e0-95f5-64b20ece1e79","cwd":"/p"}}
+{"type":"turn_context","timestamp":"2026-06-01T13:20:09.000Z","payload":{"model":"gpt-5","cwd":"/p","approval_policy":"never","sandbox_policy":{"type":"danger-full-access"}}}
+{"type":"event_msg","timestamp":"2026-06-01T13:20:11.000Z","payload":{"type":"user_message","message":"go"}}
+"#;
+        let s = parse_reader(
+            Cursor::new(lines),
+            "rollout-x-019e8357-3f8f-77e0-95f5-64b20ece1e79".into(),
+            "/f.jsonl".into(),
+            0,
+            &empty_map(),
+        )
+        .unwrap();
+        assert!(s.bypass);
+    }
+
+    #[test]
+    fn danger_sandbox_with_approvals_on_is_not_bypass() {
+        // `-s danger-full-access` (approvals still on) is not the bypass flag.
+        let lines = r#"{"type":"session_meta","timestamp":"2026-06-01T13:20:08.918Z","payload":{"id":"019e8357-3f8f-77e0-95f5-64b20ece1e79","cwd":"/p"}}
+{"type":"turn_context","timestamp":"2026-06-01T13:20:09.000Z","payload":{"cwd":"/p","approval_policy":"on-request","sandbox_policy":{"type":"danger-full-access"}}}
+{"type":"event_msg","timestamp":"2026-06-01T13:20:11.000Z","payload":{"type":"user_message","message":"go"}}
+"#;
+        let s = parse_reader(
+            Cursor::new(lines),
+            "rollout-x-019e8357-3f8f-77e0-95f5-64b20ece1e79".into(),
+            "/f.jsonl".into(),
+            0,
+            &empty_map(),
+        )
+        .unwrap();
+        assert!(!s.bypass);
     }
 
     #[test]

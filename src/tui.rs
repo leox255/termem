@@ -372,6 +372,7 @@ mod tests {
             started_at: 0,
             updated_at: 0,
             msg_count: 3,
+            bypass: false,
         }
     }
 

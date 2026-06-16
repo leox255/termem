@@ -131,6 +131,8 @@ pub fn recall(
             started_at: r.get(9)?,
             updated_at: r.get(10)?,
             msg_count: r.get(11)?,
+            // recall is not a resume path, so bypass is not selected here.
+            bypass: false,
         };
         let summary: Option<String> = r.get(12)?;
         let unfinished: Option<String> = r.get(13)?;

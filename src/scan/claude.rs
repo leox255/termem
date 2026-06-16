@@ -42,6 +42,7 @@ pub fn parse_reader<R: BufRead>(
     let mut last_prompt_field: Option<String> = None;
     let mut last_user: Option<String> = None;
     let mut model: Option<String> = None;
+    let mut perm_mode: Option<String> = None;
     let mut started = i64::MAX;
     let mut updated = 0i64;
     let mut msg_count = 0i64;
@@ -77,6 +78,15 @@ pub fn parse_reader<R: BufRead>(
                 if !g.is_empty() {
                     git_branch = Some(g.to_string());
                 }
+            }
+        }
+        // Permission mode is written on a dedicated `permission-mode` record and
+        // can appear on later records too; the last non-empty value is the mode
+        // the session ended in. `bypassPermissions` == started/continued with
+        // `--dangerously-skip-permissions`.
+        if let Some(pm) = v.get("permissionMode").and_then(|x| x.as_str()) {
+            if !pm.is_empty() {
+                perm_mode = Some(pm.to_string());
             }
         }
 
@@ -149,6 +159,7 @@ pub fn parse_reader<R: BufRead>(
         started_at: started,
         updated_at: updated,
         msg_count,
+        bypass: perm_mode.as_deref() == Some("bypassPermissions"),
     })
 }
 
@@ -229,6 +240,34 @@ mod tests {
 "#;
         let s = parse_reader(Cursor::new(lines), "x".into(), "/f.jsonl".into(), 0).unwrap();
         assert_eq!(s.first_prompt, "the real prompt");
+    }
+
+    #[test]
+    fn detects_bypass_permission_mode() {
+        let lines = r#"{"type":"permission-mode","permissionMode":"bypassPermissions","sessionId":"abc"}
+{"type":"user","cwd":"/w","timestamp":"2026-06-15T11:13:13.977Z","message":{"content":"go"}}
+"#;
+        let s = parse_reader(Cursor::new(lines), "abc".into(), "/f.jsonl".into(), 0).unwrap();
+        assert!(s.bypass);
+    }
+
+    #[test]
+    fn last_permission_mode_wins() {
+        // Started bypass, then toggled back to default: not a bypass session.
+        let lines = r#"{"type":"permission-mode","permissionMode":"bypassPermissions","sessionId":"abc"}
+{"type":"user","cwd":"/w","timestamp":"2026-06-15T11:13:13.977Z","message":{"content":"go"}}
+{"type":"permission-mode","permissionMode":"default","sessionId":"abc"}
+"#;
+        let s = parse_reader(Cursor::new(lines), "abc".into(), "/f.jsonl".into(), 0).unwrap();
+        assert!(!s.bypass);
+    }
+
+    #[test]
+    fn default_session_is_not_bypass() {
+        let lines = r#"{"type":"user","cwd":"/w","timestamp":"2026-06-15T11:13:13.977Z","message":{"content":"go"}}
+"#;
+        let s = parse_reader(Cursor::new(lines), "abc".into(), "/f.jsonl".into(), 0).unwrap();
+        assert!(!s.bypass);
     }
 
     #[test]

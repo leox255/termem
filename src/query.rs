@@ -18,7 +18,7 @@ pub enum Scope {
 }
 
 const COLUMNS: &str = "file_path, id, source, cwd, title, first_prompt, last_prompt, \
-     model, git_branch, started_at, updated_at, msg_count";
+     model, git_branch, started_at, updated_at, msg_count, bypass";
 
 /// Escape SQL LIKE wildcards so the text matches literally (use with `ESCAPE '\\'`).
 pub(crate) fn escape_like(s: &str) -> String {
@@ -226,7 +226,7 @@ fn fts_search(
     args.extend(scope_args);
     let mut sql = format!(
         "SELECT s.file_path, s.id, s.source, s.cwd, s.title, s.first_prompt, s.last_prompt, \
-         s.model, s.git_branch, s.started_at, s.updated_at, s.msg_count \
+         s.model, s.git_branch, s.started_at, s.updated_at, s.msg_count, s.bypass \
          FROM content_fts JOIN sessions s ON s.id = content_fts.session_id \
          WHERE content_fts MATCH ?{scope_sql}"
     );

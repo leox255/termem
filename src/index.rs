@@ -13,7 +13,7 @@ use rusqlite::{params, Connection};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-const SCHEMA_VERSION: i64 = 4;
+const SCHEMA_VERSION: i64 = 5;
 
 /// How much message text to fold into the content search index per session.
 const FTS_MSG_CAP: usize = 400;
@@ -111,6 +111,23 @@ impl Index {
             [],
         );
 
+        // Per-directory message board: agents post short notes scoped to a
+        // working directory; other sessions in that tree read them. Durable
+        // agent-authored data, so (like summaries) it is never dropped when the
+        // session cache is rebuilt for a new SCHEMA_VERSION.
+        self.conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS board (
+                id         INTEGER PRIMARY KEY,
+                cwd        TEXT NOT NULL,
+                author     TEXT,
+                kind       TEXT NOT NULL DEFAULT 'note',
+                body       TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_board_cwd ON board(cwd);
+            CREATE INDEX IF NOT EXISTS idx_board_created ON board(created_at);",
+        )?;
+
         let version: i64 = self
             .conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
@@ -137,6 +154,7 @@ impl Index {
                 started_at  INTEGER NOT NULL,
                 updated_at  INTEGER NOT NULL,
                 msg_count   INTEGER NOT NULL,
+                bypass      INTEGER NOT NULL DEFAULT 0,
                 file_mtime  INTEGER NOT NULL,
                 file_size   INTEGER NOT NULL
             );
@@ -303,8 +321,8 @@ fn upsert(conn: &Connection, s: &Session, mtime: i64, size: i64) -> Result<()> {
     conn.execute(
         "INSERT OR REPLACE INTO sessions
             (key, file_path, id, source, cwd, title, first_prompt, last_prompt,
-             model, git_branch, started_at, updated_at, msg_count, file_mtime, file_size)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",
+             model, git_branch, started_at, updated_at, msg_count, bypass, file_mtime, file_size)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)",
         params![
             session_key(s),
             s.file_path,
@@ -319,6 +337,7 @@ fn upsert(conn: &Connection, s: &Session, mtime: i64, size: i64) -> Result<()> {
             s.started_at,
             s.updated_at,
             s.msg_count,
+            s.bypass,
             mtime,
             size,
         ],
@@ -342,5 +361,6 @@ pub fn row_to_session(r: &rusqlite::Row) -> rusqlite::Result<Session> {
         started_at: r.get("started_at")?,
         updated_at: r.get("updated_at")?,
         msg_count: r.get("msg_count")?,
+        bypass: r.get("bypass")?,
     })
 }

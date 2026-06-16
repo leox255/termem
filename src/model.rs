@@ -50,6 +50,11 @@ pub struct Session {
     pub started_at: i64,
     pub updated_at: i64,
     pub msg_count: i64,
+    /// The session ran with permission checks bypassed: Claude
+    /// `--dangerously-skip-permissions`, Codex
+    /// `--dangerously-bypass-approvals-and-sandbox`. Resume must re-pass the
+    /// flag, since the agents do not restore that mode on their own.
+    pub bypass: bool,
 }
 
 /// Human-friendly "time ago" from an epoch-ms timestamp.

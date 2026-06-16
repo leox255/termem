@@ -3,10 +3,27 @@
 use crate::model::{Session, Source};
 
 /// The program + args that resume a session (run in the session's cwd).
+///
+/// A session started in a permissions-bypass mode is resumed in the same mode:
+/// the agents do not restore it on their own, so termem re-passes the flag.
 pub fn command_for(s: &Session) -> Option<(String, Vec<String>)> {
     match s.source {
-        Source::Claude => Some(("claude".into(), vec!["--resume".into(), s.id.clone()])),
-        Source::Codex => Some(("codex".into(), vec!["resume".into(), s.id.clone()])),
+        Source::Claude => {
+            let mut args = vec!["--resume".into(), s.id.clone()];
+            if s.bypass {
+                args.push("--dangerously-skip-permissions".into());
+            }
+            Some(("claude".into(), args))
+        }
+        Source::Codex => {
+            // `codex resume [OPTIONS] [SESSION_ID]`: the flag precedes the id.
+            let mut args = vec!["resume".into()];
+            if s.bypass {
+                args.push("--dangerously-bypass-approvals-and-sandbox".into());
+            }
+            args.push(s.id.clone());
+            Some(("codex".into(), args))
+        }
         Source::Opencode => Some(("opencode".into(), vec!["--session".into(), s.id.clone()])),
         // Gemini loads a specific session from its chats file.
         Source::Gemini => Some((
@@ -97,6 +114,7 @@ mod tests {
             started_at: 0,
             updated_at: 0,
             msg_count: 0,
+            bypass: false,
         }
     }
 
@@ -110,6 +128,35 @@ mod tests {
     fn codex_resume_line() {
         let s = sess(Source::Codex, "uuid", "/p");
         assert_eq!(print_line(&s), "cd /p && codex resume uuid");
+    }
+
+    #[test]
+    fn bypass_claude_re_passes_the_flag() {
+        let mut s = sess(Source::Claude, "abc-123", "/p");
+        s.bypass = true;
+        assert_eq!(
+            print_line(&s),
+            "cd /p && claude --resume abc-123 --dangerously-skip-permissions"
+        );
+    }
+
+    #[test]
+    fn bypass_codex_re_passes_the_flag_before_the_id() {
+        let mut s = sess(Source::Codex, "uuid", "/p");
+        s.bypass = true;
+        assert_eq!(
+            print_line(&s),
+            "cd /p && codex resume --dangerously-bypass-approvals-and-sandbox uuid"
+        );
+    }
+
+    #[test]
+    fn non_bypass_sessions_are_unchanged() {
+        // Default sessions must never gain a dangerous flag.
+        let s = sess(Source::Claude, "abc-123", "/p");
+        assert!(!print_line(&s).contains("dangerously"));
+        let s = sess(Source::Codex, "uuid", "/p");
+        assert!(!print_line(&s).contains("dangerously"));
     }
 
     #[test]
