@@ -108,6 +108,7 @@ fn handle_call(index: &mut Index, id: Option<Value>, req: &Value) -> Value {
         "save_summary" => tool_save_summary(index, &args),
         "post" => tool_post(index, &args),
         "read_board" => tool_read_board(index, &args),
+        "resolve" => tool_resolve(index, &args),
         "stats" => tool_stats(index, &args),
         other => return tool_err(id, &format!("unknown tool: {other}")),
     };
@@ -311,8 +312,20 @@ fn tool_read_board(index: &Index, args: &Value) -> Result<Value> {
     let scope = scope_arg(args, Scope::Subtree);
     let since = arg_i64(args, "since", 0);
     let kind = arg_str(args, "kind");
+    let include_resolved = args
+        .get("include_resolved")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     let limit = arg_i64(args, "limit", 50);
-    let posts = board::read(index.conn(), &dir, scope, since, kind, limit)?;
+    let posts = board::read(
+        index.conn(),
+        &dir,
+        scope,
+        since,
+        kind,
+        include_resolved,
+        limit,
+    )?;
     // Newest first; the latest timestamp is the cursor to pass back as `since`.
     let cursor = posts.iter().map(|p| p.created_at).max().unwrap_or(since);
     let items: Vec<Value> = posts
@@ -326,6 +339,7 @@ fn tool_read_board(index: &Index, args: &Value) -> Result<Value> {
                 "dir": p.cwd,
                 "at": iso(p.created_at),
                 "ts": p.created_at,
+                "resolved": p.resolved_at.map(iso),
             })
         })
         .collect();
@@ -336,6 +350,18 @@ fn tool_read_board(index: &Index, args: &Value) -> Result<Value> {
         "cursor": cursor,
         "note": "pass `cursor` back as `since` next time to read only newer posts",
     }))
+}
+
+fn tool_resolve(index: &Index, args: &Value) -> Result<Value> {
+    // Resolve one post by id, or (no id) clear every active post in a directory.
+    if let Some(id) = args.get("id").and_then(|v| v.as_i64()) {
+        let resolved = board::resolve(index.conn(), id)?;
+        return Ok(json!({"ok": true, "id": id, "resolved": resolved}));
+    }
+    let dir = cwd_arg(args);
+    let scope = scope_arg(args, Scope::Here);
+    let count = board::resolve_scope(index.conn(), &dir, scope)?;
+    Ok(json!({"ok": true, "dir": dir, "scope": scope_name(scope), "resolved": count}))
 }
 
 fn tool_stats(index: &Index, args: &Value) -> Result<Value> {
@@ -440,7 +466,20 @@ fn tool_list() -> Value {
                     "scope": {"type": "string", "enum": ["here","tree","all"], "description": "here=exact dir, tree=dir+subfolders (default), all=whole machine"},
                     "since": {"type": "integer", "description": "epoch-ms cursor from a prior read; only posts newer than this are returned (default 0 = all)"},
                     "kind": {"type": "string", "description": "filter to one kind, e.g. 'claim' (optional)"},
+                    "include_resolved": {"type": "boolean", "description": "also return resolved posts (default false; resolved posts carry a `resolved` timestamp)"},
                     "limit": {"type": "integer", "description": "max posts (default 50)"}
+                }
+            }
+        },
+        {
+            "name": "resolve",
+            "description": "Retract board posts once they no longer apply (a claim is done, a handoff was picked up). Resolved posts drop out of read_board by default but are kept for history. Pass `id` to resolve one post, or omit `id` to clear every active post in a directory.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer", "description": "resolve this one post (from a read_board result)"},
+                    "dir": {"type": "string", "description": "when no id: the board directory to clear (default cwd)"},
+                    "scope": {"type": "string", "enum": ["here","tree","all"], "description": "when no id: here=exact dir (default), tree=dir+subfolders, all=whole machine"}
                 }
             }
         },

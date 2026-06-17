@@ -117,16 +117,22 @@ impl Index {
         // session cache is rebuilt for a new SCHEMA_VERSION.
         self.conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS board (
-                id         INTEGER PRIMARY KEY,
-                cwd        TEXT NOT NULL,
-                author     TEXT,
-                kind       TEXT NOT NULL DEFAULT 'note',
-                body       TEXT NOT NULL,
-                created_at INTEGER NOT NULL
+                id          INTEGER PRIMARY KEY,
+                cwd         TEXT NOT NULL,
+                author      TEXT,
+                kind        TEXT NOT NULL DEFAULT 'note',
+                body        TEXT NOT NULL,
+                created_at  INTEGER NOT NULL,
+                resolved_at INTEGER
             );
             CREATE INDEX IF NOT EXISTS idx_board_cwd ON board(cwd);
             CREATE INDEX IF NOT EXISTS idx_board_created ON board(created_at);",
         )?;
+        // Soft-resolve column (0.6.1). Best-effort ALTER so a 0.6.0 board (which
+        // lacks it) upgrades in place without dropping its posts.
+        let _ = self
+            .conn
+            .execute("ALTER TABLE board ADD COLUMN resolved_at INTEGER", []);
 
         let version: i64 = self
             .conn

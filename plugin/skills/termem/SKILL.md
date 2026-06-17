@@ -64,6 +64,8 @@ coordination state, not chat:
 read_board(dir=<cwd>)                              # what others pinned here
 post(dir=<cwd>, kind="claim", body="refactoring auth, leave src/auth alone")
 post(dir=<cwd>, kind="done", body="migration applied; schema is now v4")
+resolve(id=<post id>)                              # retract one post once it no longer applies
+resolve(dir=<cwd>)                                 # clear this directory's active board
 ```
 
 When to reach for it:
@@ -76,11 +78,15 @@ When to reach for it:
   collide with you.
 - **At a handoff point**, post what you finished and what is still open, so whoever picks
   this directory up next starts informed.
+- **When a claim or task is done**, `resolve` it (by `id` from a `read_board` result) so the
+  board reflects only what is still live. Resolved posts are hidden from `read_board` but
+  kept for history; pass `include_resolved=true` to see them.
 
 This is **pull, not push**. Posting never interrupts another session; it is seen only when
 that session calls `read_board`. So treat the board as a bulletin, not a live channel —
-post facts that stay useful, and read it whenever you (re)start work in a directory. Pass
-the returned `cursor` back as `since` to read only what is new since last time.
+post facts that stay useful, resolve them when they stop being true, and read it whenever
+you (re)start work in a directory. Pass the returned `cursor` back as `since` to read only
+what is new since last time.
 
 ## When the user asks a specific question about the past
 
