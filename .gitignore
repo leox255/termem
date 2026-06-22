@@ -1,5 +1,7 @@
 /target
 /.claude/
+# The desktop app is private and must never be published with the crate.
+/app/
 **/*.rs.bk
 *.db
 *.db-shm

@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/components/brand.tsx","./src/components/renders.tsx","./src/components/window.tsx","./src/components/ui/badge.tsx","./src/components/ui/button.tsx","./src/lib/utils.ts"],"errors":true,"version":"5.8.3"}
