@@ -1,434 +1,478 @@
-import { useEffect, type ReactNode } from "react";
-import { Button } from "@/components/ui/button";
-import { Mark, Wordmark } from "@/components/brand";
-import { Window } from "@/components/window";
+import type { ReactNode } from "react";
 import {
-  WorkspaceRender,
-  TerminalRender,
-  BrowserRender,
-  AgentsRender,
-  GitRender,
-  GatedRender,
-  RecallRender,
-} from "@/components/renders";
-import { cn } from "@/lib/utils";
+  TerminalWindow,
+  GlobeHemisphereWest,
+  Robot,
+  GitBranch,
+  ShieldCheck,
+  Brain,
+  ArrowRight,
+  Plus,
+} from "@phosphor-icons/react";
+import { Button } from "@/components/ui/button";
+import { Logo, Mark } from "@/components/brand";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { Window } from "@/components/live/Window";
+import { Terminal, type TLine } from "@/components/live/Terminal";
+import { CodeBlock } from "@/components/live/CodeBlock";
+import { Reveal, RevealGroup, RevealItem } from "@/components/motion/Reveal";
 import { useDownloads } from "@/hooks/useDownloads";
+import { cn } from "@/lib/utils";
 
-/* ============================================================ scroll deck hook
- * Reveals content as a panel starts entering, and dims a covered panel via a
- * child overlay. It never transforms or filters a sticky element, which is what
- * makes the stacked-panel effect flicker / go dark in WebKit (Safari).
- */
-function useDeck() {
-  useEffect(() => {
-    const panels = Array.from(document.querySelectorAll<HTMLElement>("[data-panel]"));
-    const contents = panels.map((p) => p.querySelector<HTMLElement>("[data-content]"));
-    const nav = document.getElementById("topnav");
-    const cue = document.getElementById("cue");
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const revealed = new Array(panels.length).fill(false);
-    const ease = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
-    const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
+/* ============================================================ content ====== */
 
-    const reveal = (i: number) => {
-      if (!revealed[i]) {
-        revealed[i] = true;
-        panels[i].setAttribute("data-in", "");
-      }
-    };
-    const vh0 = window.innerHeight;
-    panels.forEach((p, i) => {
-      if (p.getBoundingClientRect().top < vh0 * 0.95) reveal(i);
-    });
-    // failsafe: no panel may ever stay hidden, even if the rAF loop is interrupted.
-    const failsafe = window.setTimeout(() => panels.forEach((_, i) => reveal(i)), 1600);
+const HERO_TERM: TLine[] = [
+  { kind: "cmd", text: "even ~/work/orbit" },
+  { kind: "sys", node: "workspace ready: terminal, browser, editor, agents" },
+  { kind: "cmd", text: 'even run "add rate limiting to the API"' },
+  { kind: "out", node: <span className="text-t-ink-3">agent briefed from memory, working on even/agent-1</span> },
+  { kind: "out", node: (<><span className="text-t-amber">●</span> editing src/api/limiter.rs</>) },
+  { kind: "out", node: <span className="text-t-cyan">  done. 12 tests passed, ready to review</span> },
+];
 
-    let raf = 0;
-    const frame = () => {
-      const vh = window.innerHeight;
-      const y = window.scrollY;
-      for (let i = 0; i < panels.length; i++) {
-        if (!revealed[i] && panels[i].getBoundingClientRect().top < vh * 0.9) reveal(i);
-      }
-      if (!reduce) {
-        // Fade a panel's own content as the next panel rises to cover it.
-        // Opacity on the (non-sticky) content element only — no overlay layer,
-        // no transform/filter on the sticky element. The active panel and the
-        // last panel always stay at full opacity, so none can read as "missing".
-        for (let j = 0; j < panels.length; j++) {
-          const next = panels[j + 1];
-          const p = next ? ease(clamp(1 - next.getBoundingClientRect().top / vh, 0, 1)) : 0;
-          const c = contents[j];
-          if (c) c.style.opacity = (1 - 0.6 * p).toFixed(3);
-        }
-      }
-      if (nav) nav.style.opacity = y > vh * 0.5 ? "1" : "0";
-      if (cue) cue.style.opacity = y > 40 ? "0" : "1";
-      raf = requestAnimationFrame(frame);
-    };
-    raf = requestAnimationFrame(frame);
-
-    const onKey = (e: KeyboardEvent) => {
-      const cur = Math.round(window.scrollY / window.innerHeight);
-      const go = (i: number) =>
-        window.scrollTo({ top: clamp(i, 0, panels.length - 1) * window.innerHeight, behavior: reduce ? "auto" : "smooth" });
-      if (e.key === "ArrowDown" || e.key === "PageDown" || e.key === " ") { e.preventDefault(); go(cur + 1); }
-      else if (e.key === "ArrowUp" || e.key === "PageUp") { e.preventDefault(); go(cur - 1); }
-      else if (e.key === "Home") { e.preventDefault(); go(0); }
-      else if (e.key === "End") { e.preventDefault(); go(panels.length - 1); }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => {
-      cancelAnimationFrame(raf);
-      window.clearTimeout(failsafe);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, []);
+const SHOWCASE_CODE = `pub struct Scheduler {
+    queue: VecDeque<Task>,
+    workers: Vec<Worker>,
 }
 
-/* ============================================================ primitives */
-const PANEL_BG =
-  "radial-gradient(120% 80% at 50% -10%, rgba(71,255,156,0.05), transparent 60%), linear-gradient(180deg, var(--bg-2), var(--background) 60%, var(--void))";
+impl Scheduler {
+    pub fn tick(&mut self) -> Status {
+        while let Some(task) = self.queue.pop_front() {
+            self.dispatch(task);
+        }
+        Status::Idle
+    }
+}`;
 
-function Panel({ id, first, children }: { id: string; first?: boolean; children: ReactNode }) {
+const SHOWCASE_TERM: TLine[] = [
+  { kind: "cmd", text: "cargo run --release" },
+  { kind: "sys", node: "Compiling orbit v0.4.0" },
+  { kind: "out", node: <span className="text-t-cyan">Finished release in 8.2s</span> },
+  { kind: "out", node: (<><span className="text-t-green">▸</span> listening on :7070</>) },
+];
+
+const DIFF_CODE = `@@ src/api/mod.rs
+ pub fn route(req: Request) -> Response {
+-    handle(req)
++    let req = limiter.check(req)?;
++    handle(req)
+ }`;
+
+const RECALL_TERM: TLine[] = [
+  { kind: "cmd", text: "even recall" },
+  { kind: "sys", node: "3 sessions in ~/work/orbit" },
+  { kind: "out", node: (<><span className="text-t-green">refactor scheduler</span>   <span className="text-t-ink-3">cached · all tests green</span></>) },
+  { kind: "out", node: (<><span className="text-t-amber">rate limiting</span>      <span className="text-t-ink-3">active · agent-1 on even/a1</span></>) },
+  { kind: "out", node: (<><span className="text-t-green">browser favicons</span>   <span className="text-t-ink-3">cached · resolver shipped</span></>) },
+];
+
+const INTEGRATIONS = [
+  { slug: "anthropic", label: "Claude" },
+  { slug: "gnubash", label: "Bash" },
+  { slug: "git", label: "Git" },
+  { slug: "rust", label: "Rust" },
+  { slug: "typescript", label: "TypeScript" },
+  { slug: "python", label: "Python" },
+  { slug: "go", label: "Go" },
+];
+
+const FEATURES = [
+  { icon: <TerminalWindow className="h-5 w-5" />, title: "A terminal worth living in", desc: "Split, tab, and tile real shell panes." },
+  { icon: <GlobeHemisphereWest className="h-5 w-5" />, title: "Browser in a pane", desc: "Docs and dashboards beside the code." },
+  { icon: <Robot className="h-5 w-5" />, title: "Agents in their own panes", desc: "Briefed, isolated, watchable." },
+  { icon: <GitBranch className="h-5 w-5" />, title: "Git in view", desc: "Diff, stage, and commit any branch." },
+  { icon: <ShieldCheck className="h-5 w-5" />, title: "Sandboxed by default", desc: "Worktrees and approval gates." },
+  { icon: <Brain className="h-5 w-5" />, title: "Shared memory", desc: "Every session, indexed and recallable." },
+];
+
+const STEPS = [
+  { verb: "Open your project", cmd: "even .", line: "Your folder opens with terminal, browser, and editor in one window." },
+  { verb: "Delegate the work", cmd: 'even run "fix the flaky test"', line: "An agent picks it up in its own git worktree, briefed from past sessions." },
+  { verb: "Review and ship", cmd: "approve the diff", line: "Read the change in place, approve, and it commits to its branch." },
+];
+
+const FAQ = [
+  { q: "Is the terminal a real terminal?", a: "Yes. Even runs a full PTY with your real shell, not a web emulator." },
+  { q: "Which agents can I run?", a: "Claude and Codex today, with your own keys. More are on the way." },
+  { q: "Does my code leave my machine?", a: "Only what you choose to send to an agent. Everything else stays local." },
+  { q: "Do I have to change my setup?", a: "No. Even wraps the shell, git, and tools you already use." },
+  { q: "Can an agent break my repo?", a: "No. Each runs in an isolated worktree, and risky commands wait for your approval." },
+  { q: "Is it free?", a: "Yes, free while Even is in beta." },
+];
+
+/* ============================================================ primitives === */
+
+function Section({ id, children, className }: { id?: string; children: ReactNode; className?: string }) {
   return (
-    <section
-      data-panel
-      id={id}
-      className={cn(
-        "isolate sticky top-0 flex h-[100svh] min-h-[640px] items-center justify-center overflow-hidden",
-        "px-[clamp(18px,4vw,42px)] py-[clamp(74px,9vh,96px)]",
-        first ? "rounded-none" : "rounded-t-[22px]"
-      )}
-      style={{
-        background: PANEL_BG,
-        boxShadow: first ? undefined : "0 -1px 0 var(--line) inset, 0 -36px 80px -20px rgba(0,0,0,0.85)",
-      }}
-    >
-      {!first && <span className="panel-lip" />}
-      <div data-content className="relative z-10 mx-auto w-full max-w-[1180px]">
-        {children}
-      </div>
+    <section id={id} className={cn("mx-auto w-full max-w-[1200px] px-5 sm:px-8", className)}>
+      {children}
     </section>
   );
 }
 
-function Eyebrow({ children, center }: { children: ReactNode; center?: boolean }) {
-  return (
-    <div
-      className={cn(
-        "mb-5 font-sans text-[12.5px] font-semibold uppercase tracking-[0.22em] text-green",
-        center && "text-center"
-      )}
-    >
-      {children}
-    </div>
-  );
+function Eyebrow({ children }: { children: ReactNode }) {
+  return <p className="mb-4 font-mono text-[12px] uppercase tracking-[0.2em] text-primary">{children}</p>;
 }
 
-function Display({ children, className }: { children: ReactNode; className?: string }) {
+function Heading({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <h2 className={cn("font-sans text-[clamp(2.1rem,4.7vw,4.05rem)] font-bold leading-[1.08] tracking-[-0.015em] text-ink", className)}>
+    <h2 className={cn("font-sans text-[1.9rem] font-semibold leading-[1.08] tracking-[-0.02em] text-ink sm:text-4xl md:text-[2.7rem]", className)}>
       {children}
     </h2>
   );
 }
 
-function Lede({ children, className }: { children: ReactNode; className?: string }) {
+const PANE = "p-4 font-mono text-[12.5px] leading-[1.7]";
+
+function Integration({ slug, label }: { slug: string; label: string }) {
+  const url = `https://cdn.simpleicons.org/${slug}`;
   return (
-    <p className={cn("mt-[22px] max-w-[50ch] font-sans text-[clamp(1.05rem,1.5vw,1.3rem)] leading-[1.6] text-ink-2", className)}>
-      {children}
-    </p>
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      className="h-7 w-7 bg-ink-3 opacity-70 transition-opacity hover:opacity-100"
+      style={{
+        maskImage: `url(${url})`,
+        WebkitMaskImage: `url(${url})`,
+        maskRepeat: "no-repeat",
+        WebkitMaskRepeat: "no-repeat",
+        maskSize: "contain",
+        WebkitMaskSize: "contain",
+        maskPosition: "center",
+      }}
+    />
   );
 }
 
-function Reveal({ children, d = 0, className }: { children: ReactNode; d?: number; className?: string }) {
-  return (
-    <div className={cn("reveal", className)} style={{ ["--d" as string]: d }}>
-      {children}
-    </div>
-  );
-}
+/* ============================================================ app =========== */
 
-function Feat({ icon, title, desc }: { icon: ReactNode; title: string; desc: string }) {
-  return (
-    <div className="flex items-start gap-3.5">
-      <span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-lg border border-[var(--line)] bg-green/10 text-green">
-        {icon}
-      </span>
-      <div>
-        <div className="mb-0.5 font-sans text-sm font-semibold text-ink">{title}</div>
-        <div className="font-sans text-[13.5px] leading-[1.45] text-ink-3">{desc}</div>
-      </div>
-    </div>
-  );
-}
-
-function Split({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cn("grid items-center gap-[clamp(26px,4vw,56px)] md:grid-cols-2", className)}>{children}</div>;
-}
-
-/* small inline icons */
-const I = {
-  split: <svg viewBox="0 0 16 16" className="h-[15px] w-[15px]" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="2" y="2" width="5" height="12" rx="1" /><rect x="9" y="2" width="5" height="12" rx="1" /></svg>,
-  tabs: <svg viewBox="0 0 16 16" className="h-[15px] w-[15px]" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M2 5h12M2 5v7a1 1 0 001 1h10a1 1 0 001-1V5M5 5V3h6v2" /></svg>,
-  globe: <svg viewBox="0 0 16 16" className="h-[15px] w-[15px]" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="8" r="6" /><path d="M2 8h12" /></svg>,
-  clock: <svg viewBox="0 0 16 16" className="h-[15px] w-[15px]" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="8" r="6" /><path d="M8 5v3l2 1" /></svg>,
-  box: <svg viewBox="0 0 16 16" className="h-[15px] w-[15px]" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="2" y="2" width="12" height="12" rx="2" /><path d="M2 6h12M6 6v8" /></svg>,
-  shield: <svg viewBox="0 0 16 16" className="h-[15px] w-[15px]" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M8 1l6 3v4c0 4-3 6-6 7-3-1-6-3-6-7V4z" /><path d="M6 8l1.5 1.5L10.5 6.5" /></svg>,
-  grid: <svg viewBox="0 0 16 16" className="h-[15px] w-[15px]" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M2 4h12v9H2z" /><path d="M2 7h12" /></svg>,
-  back: <svg viewBox="0 0 16 16" className="h-[15px] w-[15px]" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M3 8a5 5 0 105-5 5 5 0 00-4 2M3 3v3h3" /></svg>,
-};
-
-/* ============================================================ app */
 export default function App() {
-  useDeck();
   const dl = useDownloads();
-  return (
-    <>
-      {/* atmosphere */}
-      <div className="pointer-events-none fixed inset-0 z-0">
-        <div className="atmos-grid absolute -inset-0.5" />
-        <div className="atmos-glow absolute left-1/2 top-[34%] h-[1100px] w-[1100px] -translate-x-1/2 -translate-y-1/2" />
-        <div className="absolute inset-0" style={{ background: "radial-gradient(130% 110% at 50% 40%, transparent 55%, rgba(1,8,16,0.85) 100%)" }} />
-        <div className="atmos-grain absolute inset-0" />
-      </div>
+  const download = dl.urls[dl.primary];
 
-      {/* top nav */}
-      <header
-        id="topnav"
-        className="pointer-events-none fixed inset-x-0 top-0 z-[60] flex items-center justify-between px-[clamp(18px,4vw,42px)] py-5 opacity-0 transition-opacity duration-500"
-      >
-        <a href="#p0" className="pointer-events-auto flex items-center gap-[11px]">
-          <Mark className="h-[18px] w-[18px] text-green drop-shadow-[0_0_10px_rgba(71,255,156,0.4)]" />
-          <Wordmark className="text-[19px] drop-shadow-[0_0_10px_rgba(71,255,156,0.35)]" />
-        </a>
-        <div className="pointer-events-auto flex items-center gap-[18px]">
-          <Button asChild size="pill" className="shadow-[0_0_0_1px_rgba(71,255,156,0.5),0_8px_30px_-8px_rgba(71,255,156,0.6)]">
-            <a href={dl.urls[dl.primary]} target="_blank" rel="noopener noreferrer">Download</a>
-          </Button>
+  return (
+    <div className="grain relative min-h-[100dvh] overflow-x-clip">
+      <div
+        className="pointer-events-none fixed inset-0 z-0"
+        style={{ background: "radial-gradient(120% 80% at 50% -10%, var(--glow), transparent 55%)" }}
+      />
+
+      {/* ---- nav ---- */}
+      <header className="sticky top-0 z-50 border-b border-border/70 bg-background/75 backdrop-blur-md">
+        <div className="mx-auto flex h-16 max-w-[1200px] items-center justify-between px-5 sm:px-8">
+          <a href="#top" aria-label="Even">
+            <Logo className="text-[17px]" />
+          </a>
+          <nav className="hidden items-center gap-8 font-sans text-[14px] text-ink-2 md:flex">
+            <a className="hover:text-ink" href="#features">Features</a>
+            <a className="hover:text-ink" href="#workflow">Workflow</a>
+            <a className="hover:text-ink" href="#faq">FAQ</a>
+          </nav>
+          <div className="flex items-center gap-3">
+            <ThemeToggle />
+            <Button asChild size="pill">
+              <a href={download} target="_blank" rel="noopener noreferrer">Download</a>
+            </Button>
+          </div>
         </div>
       </header>
 
-      {/* scroll cue: fixed to the viewport (not the hero content) so it sits at
-          the bottom edge and never overlaps the description. Fades out on scroll. */}
-      <div
-        id="cue"
-        className="pointer-events-none fixed bottom-8 left-1/2 z-50 flex -translate-x-1/2 flex-col items-center gap-2.5 font-sans text-[11px] font-medium uppercase tracking-[0.24em] text-ink-3 transition-opacity duration-500"
-      >
-        Scroll
-        <span className="scroll-dot h-[5px] w-[5px] rounded-full bg-green shadow-[0_0_12px_var(--green)]" />
-      </div>
-
-      <main className="relative z-[1]">
-        {/* 00 HERO */}
-        <Panel id="p0" first>
-          <div className="flex flex-col items-center text-center">
-            <Reveal d={0}>
-              <Mark animate className="mb-[30px] w-[clamp(96px,15vw,168px)] text-green drop-shadow-[0_0_40px_rgba(71,255,156,0.45)]" />
-            </Reveal>
-            <Reveal d={260}>
-              <Wordmark className="text-[clamp(4.5rem,13vw,11rem)] drop-shadow-[0_0_30px_rgba(71,255,156,0.3)]" />
-            </Reveal>
-            <Reveal d={520}>
-              <h1 className="mt-[34px] max-w-[32ch] font-sans text-[clamp(1.2rem,2.3vw,1.75rem)] font-medium leading-[1.34] tracking-[-0.005em] text-ink-2">
-                Your terminal, browser, editor, and coding agents{" "}
-                <span className="text-ink">in one window.</span>
+      <main id="top" className="relative z-10">
+        {/* ===================== HERO ===================== */}
+        <Section className="grid grid-cols-1 items-center gap-12 pt-14 pb-16 md:min-h-[calc(100dvh-4rem)] md:grid-cols-12 md:gap-10 md:pt-12 md:pb-20">
+          <div className="md:col-span-6">
+            <Reveal>
+              <h1 className="font-sans text-[2.6rem] font-bold leading-[1.05] tracking-[-0.03em] text-ink sm:text-5xl lg:text-[3.6rem]">
+                Your terminal, now a full workspace.
               </h1>
             </Reveal>
-            <Reveal d={760}>
-              <div className="mt-6 font-sans text-[12.5px] font-medium uppercase tracking-[0.18em] text-ink-3">
-                A terminal-first workspace
-              </div>
+            <Reveal delay={0.08}>
+              <p className="mt-6 max-w-[46ch] text-[1.05rem] leading-[1.6] text-ink-2">
+                Browser, editor, and AI agents share the window with your shell, so you stop wiring five apps together.
+              </p>
             </Reveal>
-          </div>
-        </Panel>
-
-        {/* 01 ONE WORKSPACE */}
-        <Panel id="p1">
-          <div className="flex flex-col items-center gap-[clamp(14px,2.2vw,30px)]">
-            <Reveal d={0} className="text-center">
-              <Eyebrow center>Workspace</Eyebrow>
-              <Display>Everything in one window.</Display>
-            </Reveal>
-            <Reveal d={160} className="w-full">
-              <Window title={<><b className="font-medium text-ink-2">~/work/orbit</b> · even</>}>
-                <WorkspaceRender />
-              </Window>
-            </Reveal>
-            <Reveal d={340}>
-              <Lede className="max-w-[56ch] text-center">
-                Terminal, browser, editor, and coding agents share one native window, so you stop alt-tabbing between five apps to make one change.
-              </Lede>
-            </Reveal>
-          </div>
-        </Panel>
-
-        {/* 02 TERMINAL */}
-        <Panel id="p2">
-          <Split>
-            <Reveal d={0}>
-              <Eyebrow>Terminal</Eyebrow>
-              <Display>Split it however you work.</Display>
-              <Lede>Tile and tab panes any way the task needs. A real shell underneath, fast and yours to arrange.</Lede>
-              <div className="mt-7 flex flex-col gap-[13px]">
-                <Feat icon={I.split} title="Split and tile" desc="Drag any pane to split horizontally or vertically." />
-                <Feat icon={I.tabs} title="Tabs per pane" desc="Every pane keeps its own stack of tabs." />
-              </div>
-            </Reveal>
-            <Reveal d={200}>
-              <Window title={<><b className="font-medium text-ink-2">terminal</b> · 4 panes</>}>
-                <TerminalRender />
-              </Window>
-            </Reveal>
-          </Split>
-        </Panel>
-
-        {/* 03 BROWSER */}
-        <Panel id="p3">
-          <Split>
-            <Reveal d={200}>
-              <Window title={<b className="font-medium text-ink-2">browser</b>}>
-                <BrowserRender />
-              </Window>
-            </Reveal>
-            <Reveal d={0}>
-              <Eyebrow>Browser</Eyebrow>
-              <Display>A real browser, built in.</Display>
-              <Lede>A native browser pane with tabs, history, and bookmarks. Keep docs and dashboards next to the code that uses them.</Lede>
-              <div className="mt-7 flex flex-col gap-[13px]">
-                <Feat icon={I.globe} title="Native rendering" desc="A real browser engine, not an iframe." />
-                <Feat icon={I.clock} title="Tabs and history" desc="The browsing you already rely on, in a pane." />
-              </div>
-            </Reveal>
-          </Split>
-        </Panel>
-
-        {/* 04 AGENTS */}
-        <Panel id="p4">
-          <div className="flex flex-col items-center gap-[clamp(14px,2.2vw,30px)]">
-            <Reveal d={0} className="max-w-[62ch] text-center">
-              <Eyebrow center>Agents</Eyebrow>
-              <Display>Run agents where you work.</Display>
-              <Lede className="mx-auto max-w-[58ch] text-center">
-                Launch a coding agent into its own pane with the right context. See which are running, idle, or stuck at a glance.
-              </Lede>
-            </Reveal>
-            <Reveal d={200} className="w-full">
-              <Window title={<><b className="font-medium text-ink-2">agents</b> · running</>}>
-                <AgentsRender />
-              </Window>
-            </Reveal>
-          </div>
-        </Panel>
-
-        {/* 05 GIT */}
-        <Panel id="p5">
-          <div className="flex flex-col items-center gap-[clamp(14px,2vw,30px)] text-center">
-            <Reveal d={0} className="max-w-[60ch]">
-              <Eyebrow center>Source control</Eyebrow>
-              <Display>Review, stage, and commit in place.</Display>
-              <Lede className="mx-auto mt-4 max-w-[64ch] text-center">
-                Every change and diff in one panel, including each agent's branch. Stage, commit, and push without leaving Even.
-              </Lede>
-            </Reveal>
-            <Reveal d={200} className="w-full">
-              <Window title={<><b className="font-medium text-ink-2">git</b> · even/a1 ↑3</>}>
-                <GitRender />
-              </Window>
-            </Reveal>
-          </div>
-        </Panel>
-
-        {/* 06 ISOLATED & GATED */}
-        <Panel id="p6">
-          <Split>
-            <Reveal d={200}>
-              <Window title={<><b className="font-medium text-ink-2">agent-3</b> · even/a3 · sandboxed</>}>
-                <GatedRender />
-              </Window>
-            </Reveal>
-            <Reveal d={0}>
-              <Eyebrow>Sandboxing</Eyebrow>
-              <Display>Agents that stay sandboxed.</Display>
-              <Lede>Each agent works in its own git worktree, so it never touches your main branch. Risky commands wait for your approval before they run.</Lede>
-              <div className="mt-7 flex flex-col gap-[13px]">
-                <Feat icon={I.box} title="Worktree isolation" desc="One branch per agent, off your tree." />
-                <Feat icon={I.shield} title="Approval gates" desc="Pushes, deletes, and deploys pause for you." />
-              </div>
-            </Reveal>
-          </Split>
-        </Panel>
-
-        {/* 07 SHARED MEMORY */}
-        <Panel id="p7">
-          <Split>
-            <Reveal d={200}>
-              <Window title={<><b className="font-medium text-ink-2">termem</b> recall · ~/work/orbit</>}>
-                <RecallRender />
-              </Window>
-            </Reveal>
-            <Reveal d={0}>
-              <Eyebrow>Memory</Eyebrow>
-              <Display>Picks up where you left off.</Display>
-              <Lede>
-                Even runs on <b className="font-semibold text-green">termem</b>, a shared index of every terminal session across your tools. Open a folder and continue where you, or an agent, stopped.
-              </Lede>
-              <div className="mt-7 flex flex-col gap-[13px]">
-                <Feat icon={I.grid} title="Cross-tool" desc="Claude, Codex, and your shell, indexed together." />
-                <Feat icon={I.back} title="Resume anything" desc="Reopen any past session in place." />
-              </div>
-            </Reveal>
-          </Split>
-        </Panel>
-
-        {/* 08 CTA */}
-        <Panel id="p8">
-          <div className="flex flex-col items-center text-center" id="download">
-            <Reveal d={0}>
-              <Mark animate className="mb-[26px] w-[clamp(70px,9vw,108px)] text-green drop-shadow-[0_0_34px_rgba(71,255,156,0.5)]" />
-            </Reveal>
-            <Reveal d={160}>
-              <Eyebrow center>Now in beta</Eyebrow>
-            </Reveal>
-            <Reveal d={280}>
-              <Display className="mb-3.5">Make it Even.</Display>
-            </Reveal>
-            <Reveal d={400}>
-              <Lede className="mx-auto max-w-[48ch] text-center">
-                One window for your terminal, browser, editor, and agents. Free while in beta.
-              </Lede>
-            </Reveal>
-            <Reveal d={520}>
-              <div className="mt-[30px] flex flex-col items-center gap-4">
-                <Button asChild size="lg" className="shadow-[0_0_0_1px_rgba(71,255,156,0.5),0_12px_40px_-10px_rgba(71,255,156,0.6)]">
-                  <a href={dl.urls[dl.primary]} target="_blank" rel="noopener noreferrer">Download</a>
+            <Reveal delay={0.16}>
+              <div className="mt-9 flex flex-wrap items-center gap-3.5">
+                <Button asChild size="lg">
+                  <a href={download} target="_blank" rel="noopener noreferrer">Download</a>
                 </Button>
-                <div className="flex flex-wrap items-center justify-center gap-x-3.5 gap-y-1 font-mono text-[12px] text-ink-3">
-                  <a href={dl.urls.mac} target="_blank" rel="noopener noreferrer" className="hover:text-green">macOS</a>
-                  <span className="opacity-40">·</span>
-                  <a href={dl.urls.win} target="_blank" rel="noopener noreferrer" className="hover:text-green">Windows</a>
-                  <span className="opacity-40">·</span>
-                  <a href={dl.urls.deb} target="_blank" rel="noopener noreferrer" className="hover:text-green">Linux .deb</a>
-                  <span className="opacity-40">·</span>
-                  <a href={dl.urls.appimage} target="_blank" rel="noopener noreferrer" className="hover:text-green">Linux .AppImage</a>
-                  <span className="opacity-40">·</span>
-                  <a href={dl.page} target="_blank" rel="noopener noreferrer" className="hover:text-green">{dl.version}</a>
+                <Button asChild size="lg" variant="outline">
+                  <a href="#workspace">
+                    See it work
+                    <ArrowRight weight="bold" className="h-4 w-4" />
+                  </a>
+                </Button>
+              </div>
+            </Reveal>
+          </div>
+          <Reveal delay={0.2} className="md:col-span-6">
+            <Window title="zsh - even">
+              <Terminal lines={HERO_TERM} className={cn(PANE, "min-h-[260px]")} />
+            </Window>
+          </Reveal>
+        </Section>
+
+        {/* ===================== INTEGRATIONS ===================== */}
+        <Section className="border-y border-border py-10">
+          <p className="mb-8 text-center text-[14px] text-ink-3">Works with the tools you already run</p>
+          <div className="flex flex-wrap items-center justify-center gap-x-12 gap-y-7">
+            {INTEGRATIONS.map((i) => (
+              <Integration key={i.slug} slug={i.slug} label={i.label} />
+            ))}
+          </div>
+        </Section>
+
+        {/* ===================== SHOWCASE ===================== */}
+        <Section id="workspace" className="py-20 md:py-28">
+          <Reveal className="mx-auto mb-12 max-w-[42ch] text-center">
+            <Heading>Everything you reach for, side by side.</Heading>
+            <p className="mt-4 text-ink-2">Edit, run, browse, and hand work to agents without leaving the window.</p>
+          </Reveal>
+          <Reveal delay={0.1} className="relative">
+            <div
+              className="pointer-events-none absolute inset-0 -z-10"
+              style={{ background: "radial-gradient(55% 50% at 50% 38%, var(--glow), transparent 72%)" }}
+            />
+            <Window title="~/work/orbit - even">
+              <div className="grid h-[440px] grid-cols-1 md:grid-cols-[180px_1fr]">
+                <aside className="hidden flex-col gap-1 border-r border-t-line bg-t-2 p-3 font-mono text-[12px] text-t-ink-2 md:flex">
+                  <p className="px-2 pb-2 pt-1 text-[10.5px] uppercase tracking-[0.18em] text-t-ink-3">orbit</p>
+                  {["src/", "  api/", "  scheduler.rs", "  main.rs", "tests/", "Cargo.toml"].map((f) => (
+                    <span key={f} className={cn("px-2 py-1", f.includes("scheduler") && "bg-t-green/10 text-t-ink")}>
+                      {f}
+                    </span>
+                  ))}
+                </aside>
+                <div className="grid grid-rows-[1fr_auto] overflow-hidden">
+                  <div className="overflow-hidden border-b border-t-line">
+                    <div className="flex h-9 items-center gap-2 border-b border-t-line bg-t-2 px-4 font-mono text-[11px]">
+                      <span className="text-t-ink-2">scheduler.rs</span>
+                    </div>
+                    <CodeBlock code={SHOWCASE_CODE} lang="rust" className="p-4 text-[12.5px] leading-[1.7]" />
+                  </div>
+                  <Terminal lines={SHOWCASE_TERM} className={cn(PANE, "h-[150px]")} />
                 </div>
               </div>
-            </Reveal>
+            </Window>
+          </Reveal>
+        </Section>
+
+        {/* ===================== FEATURES (bento) ===================== */}
+        <Section id="features" className="py-20 md:py-28">
+          <Reveal className="mb-12 max-w-[34ch]">
+            <Eyebrow>What is inside</Eyebrow>
+            <Heading>Six tools that already know about each other.</Heading>
+          </Reveal>
+          <RevealGroup className="grid grid-cols-1 gap-4 md:grid-cols-4">
+            <RevealItem className="md:col-span-2">
+              <BentoCard {...FEATURES[0]}>
+                <div className="mt-4 border border-t-line bg-t-bg p-3 font-mono text-[12px] leading-[1.7] text-t-ink-2">
+                  <span className="text-t-green">❯</span> <span className="text-t-ink">cargo watch -x test</span>
+                  <div className="text-t-cyan">running 24 tests... ok</div>
+                </div>
+              </BentoCard>
+            </RevealItem>
+            <RevealItem><BentoCard {...FEATURES[1]} /></RevealItem>
+            <RevealItem><BentoCard {...FEATURES[5]} /></RevealItem>
+            <RevealItem className="md:col-span-2">
+              <BentoCard {...FEATURES[2]}>
+                <div className="mt-4 grid gap-2">
+                  {[
+                    ["agent-1", "refactor scheduler", "running", true],
+                    ["agent-2", "add tests", "idle 3m", false],
+                  ].map(([id, task, state, live]) => (
+                    <div key={id as string} className="flex items-center gap-3 border border-t-line bg-t-bg px-3 py-2 font-mono text-[12px]">
+                      <span className={cn("h-1.5 w-1.5", live ? "bg-t-green" : "bg-t-amber")} />
+                      <span className="text-t-ink">{id}</span>
+                      <span className="text-t-ink-3">{task}</span>
+                      <span className={cn("ml-auto", live ? "text-t-green" : "text-t-amber")}>{state}</span>
+                    </div>
+                  ))}
+                </div>
+              </BentoCard>
+            </RevealItem>
+            <RevealItem><BentoCard {...FEATURES[3]} /></RevealItem>
+            <RevealItem><BentoCard {...FEATURES[4]} /></RevealItem>
+          </RevealGroup>
+        </Section>
+
+        {/* ===================== WORKFLOW (command flow) ===================== */}
+        <Section id="workflow" className="grid grid-cols-1 gap-12 py-20 md:grid-cols-12 md:gap-16 md:py-28">
+          <Reveal className="md:col-span-5">
+            <Heading>From open folder to shipped change.</Heading>
+            <p className="mt-5 max-w-[42ch] text-ink-2">
+              The whole loop runs in one window, with three commands you already half-know.
+            </p>
+            <Button asChild size="lg" className="mt-8">
+              <a href={download} target="_blank" rel="noopener noreferrer">Download</a>
+            </Button>
+          </Reveal>
+          <div className="md:col-span-7">
+            <RevealGroup className="grid gap-8 border-l border-border pl-8">
+              {STEPS.map((s) => (
+                <RevealItem key={s.verb}>
+                  <h3 className="font-sans text-[1.2rem] font-semibold tracking-[-0.01em] text-ink">{s.verb}</h3>
+                  <code className="mt-3 inline-block border border-t-line bg-t-bg px-3 py-1.5 font-mono text-[12.5px] text-t-green">
+                    {s.cmd}
+                  </code>
+                  <p className="mt-3 max-w-[52ch] text-[14.5px] leading-[1.55] text-ink-2">{s.line}</p>
+                </RevealItem>
+              ))}
+            </RevealGroup>
           </div>
-          <div className="absolute inset-x-0 bottom-0 flex flex-wrap items-center justify-between gap-2.5 border-t border-[var(--line-2)] px-[clamp(18px,4vw,42px)] py-6 font-sans text-xs text-ink-3">
-            <div className="flex items-center gap-2.5">
-              <Mark className="h-3.5 w-3.5 text-green-dim" />© 2026 Even
-            </div>
-            <div className="flex gap-5">
-              <a href="#p0" className="hover:text-green">Top</a>
-              <a href={dl.urls[dl.primary]} target="_blank" rel="noopener noreferrer" className="hover:text-green">Download</a>
+        </Section>
+
+        {/* ===================== AGENTS + SAFETY ===================== */}
+        <Section className="grid grid-cols-1 items-center gap-12 py-20 md:grid-cols-2 md:py-28">
+          <Reveal>
+            <Window title="agent-1 - even/a1 · sandboxed">
+              <div className="grid grid-rows-[1fr_auto]">
+                <div className="border-b border-t-line">
+                  <div className="flex h-9 items-center border-b border-t-line bg-t-2 px-4 font-mono text-[11px] text-t-ink-3">
+                    src/api/mod.rs
+                  </div>
+                  <CodeBlock code={DIFF_CODE} lang="diff" className="p-4 text-[12.5px] leading-[1.7]" />
+                </div>
+                <div className="flex items-center justify-between gap-3 p-3 font-mono text-[12px]">
+                  <span className="text-t-ink-3">push to origin/even/a1</span>
+                  <span className="flex gap-2">
+                    <span className="bg-t-green px-3 py-1.5 font-semibold text-[#02160c]">Approve</span>
+                    <span className="border border-t-line px-3 py-1.5 text-t-ink-2">Deny</span>
+                  </span>
+                </div>
+              </div>
+            </Window>
+          </Reveal>
+          <Reveal delay={0.1}>
+            <Heading>Let agents run. Keep a hand on the wheel.</Heading>
+            <p className="mt-5 max-w-[48ch] text-[1.02rem] leading-[1.65] text-ink-2">
+              Each agent works in its own git worktree, so it never touches your main branch. Review the diff in place, and every push, delete, or deploy waits for one tap of approval.
+            </p>
+            <ul className="mt-7 grid gap-4">
+              {[
+                [<ShieldCheck key="a" className="h-5 w-5" />, "Worktree isolation", "One branch per agent, off your tree."],
+                [<GitBranch key="b" className="h-5 w-5" />, "Review then ship", "Read the diff, approve, and commit in place."],
+              ].map(([icon, t, d], i) => (
+                <li key={i} className="flex items-start gap-3.5">
+                  <span className="grid h-9 w-9 shrink-0 place-items-center border border-border bg-primary/10 text-primary">
+                    {icon}
+                  </span>
+                  <span>
+                    <span className="block font-medium text-ink">{t}</span>
+                    <span className="block text-[14px] text-ink-3">{d}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </Reveal>
+        </Section>
+
+        {/* ===================== MEMORY ===================== */}
+        <Section className="py-20 md:py-28">
+          <div className="border border-border bg-[var(--bg-2)] p-8 md:p-14">
+            <div className="grid grid-cols-1 items-center gap-10 md:grid-cols-12">
+              <Reveal className="md:col-span-7">
+                <Eyebrow>Powered by termem</Eyebrow>
+                <Heading className="max-w-[18ch]">It remembers every session, across every tool.</Heading>
+                <p className="mt-5 max-w-[52ch] text-[1.02rem] leading-[1.65] text-ink-2">
+                  Underneath Even runs termem, a shared index of every terminal session from Claude, Codex, and your shell. Open a folder and continue where you, or an agent, stopped.
+                </p>
+              </Reveal>
+              <Reveal delay={0.1} className="md:col-span-5">
+                <div className="border border-t-line bg-t-bg">
+                  <Terminal lines={RECALL_TERM} className={cn(PANE, "min-h-[180px]")} />
+                </div>
+              </Reveal>
             </div>
           </div>
-        </Panel>
+        </Section>
+
+        {/* ===================== FAQ ===================== */}
+        <Section id="faq" className="py-20 md:py-28">
+          <Reveal className="mx-auto mb-10 max-w-[24ch] text-center">
+            <Heading>Questions, answered.</Heading>
+          </Reveal>
+          <Reveal delay={0.05} className="mx-auto max-w-[760px]">
+            {FAQ.map((f) => (
+              <details key={f.q} className="group border-b border-border py-5">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-sans text-[1.05rem] font-medium text-ink">
+                  {f.q}
+                  <Plus weight="bold" className="h-4 w-4 shrink-0 text-ink-3 transition-transform group-open:rotate-45" />
+                </summary>
+                <p className="mt-3 max-w-[64ch] text-[15px] leading-[1.6] text-ink-2">{f.a}</p>
+              </details>
+            ))}
+          </Reveal>
+        </Section>
+
+        {/* ===================== CTA ===================== */}
+        <Section className="py-24 text-center md:py-32">
+          <Reveal className="mx-auto flex max-w-[40ch] flex-col items-center">
+            <Mark className="mb-7 h-14 w-14 text-primary" />
+            <h2 className="font-sans text-[2.3rem] font-bold leading-[1.05] tracking-[-0.02em] text-ink sm:text-5xl">
+              Make it Even.
+            </h2>
+            <p className="mt-5 text-ink-2">One window for your terminal, browser, editor, and agents. Free while in beta.</p>
+            <div className="mt-9">
+              <Button asChild size="lg">
+                <a href={download} target="_blank" rel="noopener noreferrer">Download</a>
+              </Button>
+            </div>
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 font-mono text-[12px] text-ink-3">
+              <a className="hover:text-primary" href={dl.urls.mac} target="_blank" rel="noopener noreferrer">macOS</a>
+              <a className="hover:text-primary" href={dl.urls.win} target="_blank" rel="noopener noreferrer">Windows</a>
+              <a className="hover:text-primary" href={dl.urls.deb} target="_blank" rel="noopener noreferrer">Linux .deb</a>
+              <a className="hover:text-primary" href={dl.urls.appimage} target="_blank" rel="noopener noreferrer">Linux .AppImage</a>
+            </div>
+          </Reveal>
+        </Section>
+
+        {/* ===================== FOOTER ===================== */}
+        <footer className="border-t border-border">
+          <Section className="grid grid-cols-1 gap-8 py-12 sm:grid-cols-2">
+            <div>
+              <Logo className="text-[16px]" />
+              <p className="mt-3 max-w-[34ch] text-[14px] text-ink-3">The terminal-first workspace where your shell, the web, your editor, and agents live together.</p>
+            </div>
+            <nav className="flex flex-wrap gap-x-10 gap-y-3 font-sans text-[14px] text-ink-2 sm:justify-end">
+              <a className="hover:text-primary" href="#features">Features</a>
+              <a className="hover:text-primary" href="#workflow">Workflow</a>
+              <a className="hover:text-primary" href="#faq">FAQ</a>
+              <a className="hover:text-primary" href={download} target="_blank" rel="noopener noreferrer">Download</a>
+            </nav>
+          </Section>
+          <Section className="flex items-center justify-between border-t border-border py-6 font-mono text-[12px] text-ink-3">
+            <span>© 2026 Even</span>
+            <a className="hover:text-primary" href="#top">Back to top</a>
+          </Section>
+        </footer>
       </main>
-    </>
+    </div>
+  );
+}
+
+/* ============================================================ bento card ==== */
+
+function BentoCard({
+  icon,
+  title,
+  desc,
+  children,
+}: {
+  icon: ReactNode;
+  title: string;
+  desc: string;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="flex h-full flex-col border border-border bg-card p-6 transition-colors hover:border-[var(--line-strong)]">
+      <span className="mb-4 grid h-10 w-10 place-items-center border border-border bg-primary/10 text-primary">
+        {icon}
+      </span>
+      <h3 className="font-sans text-[1.15rem] font-semibold tracking-[-0.01em] text-ink">{title}</h3>
+      <p className="mt-2 text-[14px] leading-[1.5] text-ink-2">{desc}</p>
+      {children}
+    </div>
   );
 }

@@ -1,65 +1,78 @@
 @import "tailwindcss";
 
-/* ============================================================ TOKENS (dark, brand) */
+/* ============================================================ DESIGN SYSTEM
+ * Even - terminal-native developer workspace.
+ * Light/dark page with a toggle. The product windows (terminal, code, diffs)
+ * use a FIXED dark "terminal" palette in both themes, so a real dark terminal
+ * always sits on the page. One accent (green), sharp corners app-wide.
+ */
 :root {
-  --radius: 0.625rem;
+  --radius: 0px;
 
-  --background: #02101d;
-  --foreground: #e9f3ef;
-  --card: #06192a;
-  --card-foreground: #e9f3ef;
-  --popover: #06192a;
-  --popover-foreground: #e9f3ef;
+  /* ---- page surfaces (swap by theme). :root = LIGHT (warm off-white). ---- */
+  --bg: #f6f7f4;
+  --bg-2: #ecefe9;
+  --card: #ffffff;
+  --ink: #0c1f1a;
+  --ink-2: #41544f;
+  --ink-3: #6f8580;
+  --line: rgba(12, 40, 30, 0.12);
+  --line-2: rgba(12, 40, 30, 0.06);
+  --line-strong: rgba(12, 40, 30, 0.22);
+  --primary: #0fae74; /* deeper green stays legible on light */
+  --primary-foreground: #ffffff;
+  --glow: rgba(16, 178, 119, 0.08);
 
+  /* ---- terminal / product surfaces: FIXED dark in BOTH themes ---- */
+  --t-bg: #03121f;
+  --t-2: #071f30;
+  --t-line: rgba(120, 200, 170, 0.13);
+  --t-ink: #dbe9e4;
+  --t-ink-2: #9db6b1;
+  --t-ink-3: #5e7976;
+  --t-green: #47ff9c;
+  --t-amber: #ffc266;
+  --t-cyan: #74e0ff;
+
+  /* shadcn bridge -> swappable page tokens */
+  --background: var(--bg);
+  --foreground: var(--ink);
+  --secondary: var(--bg-2);
+  --secondary-foreground: var(--ink);
+  --muted: var(--bg-2);
+  --muted-foreground: var(--ink-2);
+  --accent: var(--bg-2);
+  --accent-foreground: var(--ink);
+  --border: var(--line);
+  --input: var(--line);
+  --ring: var(--primary);
+}
+
+.dark {
+  --bg: #03121f;
+  --bg-2: #061b2b;
+  --card: #07202f;
+  --ink: #eaf3ef;
+  --ink-2: #9db6b1;
+  --ink-3: #5e7976;
+  --line: rgba(120, 200, 170, 0.1);
+  --line-2: rgba(120, 200, 170, 0.05);
+  --line-strong: rgba(120, 200, 170, 0.2);
   --primary: #47ff9c;
-  --primary-foreground: #02140b;
-  --secondary: #0a2334;
-  --secondary-foreground: #e9f3ef;
-  --muted: #0a2334;
-  --muted-foreground: #a9c2bd;
-  --accent: #0c3a5c;
-  --accent-foreground: #e7f3ff;
-  --destructive: #ff7a6b;
-  --destructive-foreground: #ffffff;
-
-  --border: rgba(120, 200, 170, 0.14);
-  --input: rgba(120, 200, 170, 0.14);
-  --ring: #47ff9c;
-
-  /* marketing extras */
-  --void: #010a14;
-  --bg-2: #01131f;
-  --green: #47ff9c;
-  --green-2: #10b277;
-  --green-dim: #2f8f6a;
-  --amber: #ffc266;
-  --red: #ff7a6b;
-  --cyan: #74e0ff;
-  --ink: #e9f3ef;
-  --ink-2: #a9c2bd;
-  --ink-3: #6f8a87;
-  --line: rgba(120, 200, 170, 0.12);
-  --line-2: rgba(120, 200, 170, 0.06);
-  --ease: cubic-bezier(0.16, 0.84, 0.3, 1);
+  --primary-foreground: #02160c;
+  --glow: rgba(71, 255, 156, 0.07);
 }
 
 @theme {
-  --font-sans: "Saira", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-sans: "Geist Variable", system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, monospace;
+  --font-wordmark: "Saira", system-ui, sans-serif;
 }
 
 @theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
@@ -68,175 +81,105 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
 
-  --color-green: var(--green);
-  --color-green-dim: var(--green-dim);
-  --color-amber: var(--amber);
-  --color-red: var(--red);
-  --color-cyan: var(--cyan);
   --color-ink: var(--ink);
   --color-ink-2: var(--ink-2);
   --color-ink-3: var(--ink-3);
-  --color-void: var(--void);
+
+  --color-t-bg: var(--t-bg);
+  --color-t-2: var(--t-2);
+  --color-t-line: var(--t-line);
+  --color-t-ink: var(--t-ink);
+  --color-t-ink-2: var(--t-ink-2);
+  --color-t-ink-3: var(--t-ink-3);
+  --color-t-green: var(--t-green);
+  --color-t-amber: var(--t-amber);
+  --color-t-cyan: var(--t-cyan);
 }
 
 @layer base {
   * {
     border-color: var(--border);
   }
+  /* Sharp corners everywhere (SVG logo mark keeps its own rx). */
+  *,
+  *::before,
+  *::after {
+    border-radius: 0 !important;
+  }
   html {
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
-  }
-  html {
-    /* clip (not hidden/auto) so the brand glow can't cause a horizontal
-       scrollbar WITHOUT turning <html>/<body> into a scroll container, which
-       would break `position: sticky` panel stacking in Safari/WebKit. */
     overflow-x: clip;
+    scroll-behavior: smooth;
   }
   body {
-    background: var(--background);
-    color: var(--foreground);
+    background: var(--bg);
+    color: var(--ink);
     font-family: var(--font-sans);
-    overflow-x: clip;
+    font-feature-settings: "ss01";
+    transition: background-color 0.3s ease, color 0.3s ease;
   }
   ::selection {
-    background: var(--green);
-    color: var(--void);
+    background: var(--primary);
+    color: var(--primary-foreground);
   }
   ::-webkit-scrollbar {
-    width: 10px;
+    width: 11px;
   }
   ::-webkit-scrollbar-track {
-    background: var(--void);
+    background: var(--bg-2);
   }
   ::-webkit-scrollbar-thumb {
-    background: #12303f;
-    border-radius: 8px;
-    border: 2px solid var(--void);
-  }
-  ::-webkit-scrollbar-thumb:hover {
-    background: #1a4255;
+    background: color-mix(in oklab, var(--ink-3) 55%, transparent);
+    border: 3px solid var(--bg-2);
   }
 }
 
-/* ============================================================ DECK MECHANICS
- * Robust, cross-browser: panels are sticky and cover one another.
- * We NEVER transform/filter a sticky element (that is what flickers in WebKit).
- * Depth comes from a child dim overlay (opacity only); reveals from a child class.
- */
-.reveal {
-  opacity: 0;
-  transform: translateY(16px);
-  transition: opacity 0.55s var(--ease), transform 0.55s var(--ease);
-  transition-delay: calc(var(--d, 0) * 1ms);
-}
-[data-in] .reveal {
-  opacity: 1;
-  transform: none;
-}
-
-.panel-dim {
-  position: absolute;
-  inset: 0;
-  z-index: 30;
-  pointer-events: none;
-  background: var(--void);
-  opacity: 0;
-  border-radius: inherit;
-}
-
-/* hairline lip on the covering edge */
-.panel-lip {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  z-index: 31;
-  background: linear-gradient(90deg, transparent, rgba(71, 255, 156, 0.4), transparent);
-  opacity: 0;
-  transition: opacity 0.6s var(--ease);
-}
-[data-in] .panel-lip {
-  opacity: 0.6;
+@layer utilities {
+  .grain::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    opacity: 0.035;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  .terminal-cursor {
+    display: inline-block;
+    width: 0.5em;
+    height: 1.05em;
+    transform: translateY(0.15em);
+    background: var(--t-green);
+    animation: blink 1.1s step-end infinite;
+  }
+  @keyframes blink {
+    50% {
+      opacity: 0;
+    }
+  }
 }
 
-/* ============================================================ ATMOSPHERE */
-.atmos-grid {
-  background-image: linear-gradient(var(--line-2) 1px, transparent 1px),
-    linear-gradient(90deg, var(--line-2) 1px, transparent 1px);
-  background-size: 64px 64px;
-  -webkit-mask-image: radial-gradient(120% 90% at 50% 8%, #000 35%, transparent 78%);
-  mask-image: radial-gradient(120% 90% at 50% 8%, #000 35%, transparent 78%);
-}
-.atmos-glow {
-  background: radial-gradient(circle, rgba(71, 255, 156, 0.16), rgba(16, 178, 119, 0.05) 38%, transparent 64%);
-  filter: blur(8px);
-  animation: breathe 9s var(--ease) infinite;
-}
-.atmos-grain {
-  opacity: 0.05;
-  mix-blend-mode: overlay;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-@keyframes breathe {
-  0%, 100% { opacity: 0.85; transform: translate(-50%, -50%) scale(1); }
-  50% { opacity: 1; transform: translate(-50%, -50%) scale(1.08); }
-}
-
-/* ============================================================ BRAND MARK */
-.mark-bar {
-  transform-box: fill-box;
-  transform-origin: left center;
-  transform: scaleX(0);
-  opacity: 0;
-}
-[data-in] .mark-bar {
-  animation: barIn 1s var(--ease) forwards;
-}
-[data-in] .mark-bar:nth-child(1) { animation-delay: 0.15s; }
-[data-in] .mark-bar:nth-child(2) { animation-delay: 0.32s; }
-[data-in] .mark-bar:nth-child(3) { animation-delay: 0.49s; }
-@keyframes barIn {
-  to { transform: scaleX(1); opacity: 1; }
-}
-
-/* ============================================================ RENDER PRIMITIVES */
-.term-cursor {
-  display: inline-block;
-  width: 8px;
-  height: 14px;
-  background: var(--green);
-  vertical-align: -2px;
-  box-shadow: 0 0 8px var(--green);
-  animation: blink 1.1s step-end infinite;
-}
-@keyframes blink { 50% { opacity: 0; } }
-
-.dot-pulse { animation: pulse 1.6s ease-in-out infinite; }
-.dot-pulse-fast { animation: pulse 1s ease-in-out infinite; }
-@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-
-.gate-in { animation: gateIn 0.7s var(--ease) 0.45s both; }
-@keyframes gateIn {
-  from { opacity: 0; transform: translateY(16px) scale(0.96); }
-  to { opacity: 1; transform: none; }
-}
-.scroll-dot { animation: fall 1.8s var(--ease) infinite; }
-@keyframes fall {
-  0% { transform: translateY(-6px); opacity: 0; }
-  30% { opacity: 1; }
-  100% { transform: translateY(14px); opacity: 0; }
+/* shiki: transparent bg, our mono */
+.shiki,
+.shiki span {
+  background: transparent !important;
+  font-family: var(--font-mono) !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  * { animation: none !important; }
-  .reveal { opacity: 1; transform: none; }
-  .panel-dim { opacity: 0 !important; }
+  *,
+  body {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  html {
+    scroll-behavior: auto;
+  }
 }

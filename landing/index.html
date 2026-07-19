@@ -3,11 +3,23 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Even · the terminal-first workspace</title>
-    <meta name="description" content="Even: terminal, browser, code, and AI agents, together in one native macOS window." />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Saira:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+    <title>Even — the terminal-first workspace</title>
+    <meta
+      name="description"
+      content="Even is a terminal-first workspace. Your terminal, browser, editor, and coding agents in one window."
+    />
+    <meta name="color-scheme" content="dark light" />
+    <script>
+      // Set theme before paint to avoid a flash. Default dark (terminal tool);
+      // honor a stored choice, else fall back to system preference.
+      try {
+        var t = localStorage.getItem("even-theme");
+        var dark = t ? t === "dark" : !window.matchMedia("(prefers-color-scheme: light)").matches;
+        document.documentElement.classList.toggle("dark", dark);
+      } catch (e) {
+        document.documentElement.classList.add("dark");
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
