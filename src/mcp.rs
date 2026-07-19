@@ -71,7 +71,9 @@ fn err(id: Option<Value>, code: i64, msg: &str) -> Value {
 }
 
 fn tool_ok(id: Option<Value>, value: Value) -> Value {
-    let text = serde_json::to_string_pretty(&value).unwrap_or_default();
+    // Compact JSON: these payloads land in a model's context, and the
+    // indentation of pretty-printing is 10-15% pure token overhead.
+    let text = serde_json::to_string(&value).unwrap_or_default();
     ok(
         id,
         json!({"content": [{"type": "text", "text": text}], "isError": false}),
@@ -233,8 +235,10 @@ fn tool_recall(index: &Index, args: &Value) -> Result<Value> {
 
     let note = if needs > 0 {
         format!(
-            "{needs} session(s) have no current summary. Read each via get_session and \
-             store a primer via save_summary so every agent benefits next time."
+            "{needs} session(s) have no current summary. Build primers without bloating this \
+             conversation: delegate to a cheap subagent that reads each relevant session \
+             (get_session, digest detail) and stores a primer via save_summary. Only summarize \
+             sessions relevant to the task at hand; skip the rest."
         )
     } else {
         "all sessions in scope have a cached summary".to_string()
@@ -243,13 +247,41 @@ fn tool_recall(index: &Index, args: &Value) -> Result<Value> {
 }
 
 fn head_for(s: &Session) -> Result<String> {
+    // Bound each unsummarized session's preview so recall stays cheap even
+    // when several sessions in scope have no primer yet.
+    const HEAD_TOTAL_CAP: usize = 1200;
     let page = transcript::read(s, 0, 8)?;
     let mut buf = String::new();
     for m in page.messages {
         let snippet: String = m.text.chars().take(280).collect();
         buf.push_str(&format!("[{}] {}\n", m.role, snippet));
+        if buf.chars().count() >= HEAD_TOTAL_CAP {
+            break;
+        }
     }
-    Ok(buf.trim().to_string())
+    let trimmed: String = buf.chars().take(HEAD_TOTAL_CAP).collect();
+    Ok(trimmed.trim().to_string())
+}
+
+/// Per-message char cap in digest detail. Long messages keep their head
+/// (intent) and tail (conclusion) with the middle elided.
+const DIGEST_MSG_CAP: usize = 600;
+/// Whole-page char budget in digest detail; messages past it move to the next
+/// cursor, so one call can never dump tens of thousands of tokens.
+const DIGEST_PAGE_BUDGET: usize = 24_000;
+
+/// Middle-truncate to at most ~`cap` chars, keeping head and tail.
+fn truncate_middle(text: &str, cap: usize) -> (String, bool) {
+    let n = text.chars().count();
+    if n <= cap {
+        return (text.to_string(), false);
+    }
+    let head: String = text.chars().take(cap * 2 / 3).collect();
+    let tail: String = text.chars().skip(n - cap / 3).collect();
+    (
+        format!("{head}\n…[{} chars omitted]…\n{tail}", n - cap),
+        true,
+    )
 }
 
 fn tool_get_session(index: &Index, args: &Value) -> Result<Value> {
@@ -261,24 +293,69 @@ fn tool_get_session(index: &Index, args: &Value) -> Result<Value> {
     let offset: usize = arg_str(args, "cursor")
         .and_then(|c| c.parse().ok())
         .unwrap_or(0);
+    let full = arg_str(args, "detail") == Some("full");
     let limit = arg_i64(args, "max_messages", 50).clamp(1, 1000) as usize;
     let page = transcript::read(&session, offset, limit)?;
-    let messages: Vec<Value> = page
-        .messages
-        .iter()
-        .map(|m| json!({"role": m.role, "text": m.text, "ts": m.ts}))
-        .collect();
-    let chars: usize = page.messages.iter().map(|m| m.text.len()).sum();
-    Ok(json!({
+
+    let mut messages: Vec<Value> = Vec::new();
+    let mut chars = 0usize;
+    let mut clipped = 0usize;
+    for m in &page.messages {
+        let (text, cut) = if full {
+            (m.text.clone(), false)
+        } else {
+            truncate_middle(&m.text, DIGEST_MSG_CAP)
+        };
+        // Always deliver at least one message so progress is guaranteed.
+        if !full && !messages.is_empty() && chars + text.chars().count() > DIGEST_PAGE_BUDGET {
+            break;
+        }
+        chars += text.chars().count();
+        if cut {
+            clipped += 1;
+        }
+        messages.push(json!({"role": m.role, "text": text, "ts": m.ts}));
+    }
+    let taken = messages.len();
+    // If the page budget cut the fetched page short, more of it remains at
+    // offset+taken; otherwise fall through to the transcript's own next page.
+    let next_cursor = if taken < page.messages.len() {
+        Some((offset + taken).to_string())
+    } else {
+        page.next_offset.map(|o| o.to_string())
+    };
+
+    let mut out = json!({
         "id": session.id,
         "source": session.source.as_str(),
         "dir": session.cwd,
         "title": session.title,
+        "detail": if full { "full" } else { "digest" },
         "total_messages": page.total,
         "messages": messages,
-        "next_cursor": page.next_offset.map(|o| o.to_string()),
+        "next_cursor": next_cursor,
         "approx_tokens": chars / 4,
-    }))
+    });
+    if clipped > 0 {
+        out["note"] = json!(format!(
+            "digest detail: {clipped} long message(s) middle-truncated to ~{DIGEST_MSG_CAP} chars. \
+             Enough to summarize; pass detail=\"full\" only when exact text matters."
+        ));
+    }
+    Ok(out)
+}
+
+/// Stored-primer caps: summaries are replayed into model context by every
+/// future recall, so an oversized one taxes every session that follows.
+const SUMMARY_CAP: usize = 2000;
+const UNFINISHED_CAP: usize = 600;
+
+fn clip(text: &str, cap: usize) -> (String, bool) {
+    if text.chars().count() <= cap {
+        (text.to_string(), false)
+    } else {
+        (text.chars().take(cap).collect(), true)
+    }
 }
 
 fn tool_save_summary(index: &Index, args: &Value) -> Result<Value> {
@@ -294,8 +371,24 @@ fn tool_save_summary(index: &Index, args: &Value) -> Result<Value> {
                 .collect()
         })
         .unwrap_or_default();
-    let known = memory::save_summary(index.conn(), id, summary, unfinished, &tags)?;
-    Ok(json!({"ok": true, "id": id, "known_session": known}))
+    let (summary, sum_cut) = clip(summary, SUMMARY_CAP);
+    let unfinished = unfinished.map(|u| clip(u, UNFINISHED_CAP));
+    let unf_cut = unfinished.as_ref().is_some_and(|(_, cut)| *cut);
+    let known = memory::save_summary(
+        index.conn(),
+        id,
+        &summary,
+        unfinished.as_ref().map(|(u, _)| u.as_str()),
+        &tags,
+    )?;
+    let mut out = json!({"ok": true, "id": id, "known_session": known});
+    if sum_cut || unf_cut {
+        out["note"] = json!(format!(
+            "stored, but clipped to caps (summary {SUMMARY_CAP} chars, unfinished {UNFINISHED_CAP}). \
+             Primers are context, not prose; keep them short."
+        ));
+    }
+    Ok(out)
 }
 
 fn tool_post(index: &Index, args: &Value) -> Result<Value> {
@@ -417,26 +510,27 @@ fn tool_list() -> Value {
         },
         {
             "name": "get_session",
-            "description": "Fetch the raw messages of one session (paginated) so you can distil a summary or answer a detailed question.",
+            "description": "Fetch the messages of one session (paginated) so you can distil a summary or answer a detailed question. Default detail is 'digest': long messages are middle-truncated and each page is capped, which is enough to summarize. Use detail 'full' only when the exact text matters.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "id": {"type": "string", "description": "session id"},
                     "cursor": {"type": "string", "description": "pagination cursor from a prior call"},
-                    "max_messages": {"type": "integer", "description": "page size (default 50)"}
+                    "max_messages": {"type": "integer", "description": "page size (default 50)"},
+                    "detail": {"type": "string", "enum": ["digest","full"], "description": "digest (default) = token-frugal, long messages middle-truncated, page char-capped; full = exact text"}
                 },
                 "required": ["id"]
             }
         },
         {
             "name": "save_summary",
-            "description": "Store an agent-authored primer for a session in termem's own store (never the source file). This is how memory is built for every future agent.",
+            "description": "Store an agent-authored primer for a session in termem's own store (never the source file). This is how memory is built for every future agent. Primers are capped (summary 2000 chars, unfinished 600): they are recalled into context later, so keep them tight.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "id": {"type": "string", "description": "session being summarised"},
-                    "summary": {"type": "string", "description": "the distilled primer"},
-                    "unfinished": {"type": "string", "description": "what was left open (high value for resumption)"},
+                    "summary": {"type": "string", "description": "the distilled primer (max 2000 chars; longer is clipped)"},
+                    "unfinished": {"type": "string", "description": "what was left open (high value for resumption; max 600 chars)"},
                     "tags": {"type": "array", "items": {"type": "string"}}
                 },
                 "required": ["id", "summary"]
@@ -495,4 +589,44 @@ fn tool_list() -> Value {
             }
         }
     ])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn truncate_middle_keeps_head_and_tail() {
+        let (short, cut) = truncate_middle("hello", 600);
+        assert_eq!(short, "hello");
+        assert!(!cut);
+
+        let long = format!("{}MIDDLE{}", "a".repeat(500), "z".repeat(500));
+        let (t, cut) = truncate_middle(&long, 600);
+        assert!(cut);
+        assert!(t.starts_with("aaa"));
+        assert!(t.ends_with("zzz"));
+        assert!(t.contains("chars omitted"));
+        // Head + tail + marker stays in the same ballpark as the cap.
+        assert!(t.chars().count() < 700);
+    }
+
+    #[test]
+    fn truncate_middle_is_char_safe() {
+        // Multi-byte chars must not split (panics on byte slicing would).
+        let long = "é".repeat(1000);
+        let (t, cut) = truncate_middle(&long, 100);
+        assert!(cut);
+        assert!(t.contains("chars omitted"));
+    }
+
+    #[test]
+    fn clip_caps_at_char_boundary() {
+        let (s, cut) = clip("short", 10);
+        assert_eq!(s, "short");
+        assert!(!cut);
+        let (s, cut) = clip(&"é".repeat(30), 10);
+        assert_eq!(s.chars().count(), 10);
+        assert!(cut);
+    }
 }

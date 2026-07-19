@@ -2,6 +2,40 @@
 
 All notable changes to termem are documented here.
 
+## [0.6.2] - 2026-07-20
+
+Token-efficiency release: termem responses land in a model's context, and one
+`get_session` page could cost 10k+ tokens. MCP output is now budgeted.
+
+### Changed
+- `get_session` gains a `detail` parameter, default `digest`: long messages are
+  middle-truncated to ~600 chars (head and tail kept, middle elided with a
+  marker) and each page is capped at ~24k chars, with the cursor advancing so
+  nothing is skipped. `detail="full"` returns exact text as before.
+- `save_summary` clips stored primers (summary 2000 chars, `unfinished` 600)
+  and says so in the response; recall replays every primer into context, so
+  oversized ones taxed every later session.
+- `recall` bounds each unsummarized session's `head` preview to 1200 chars, and
+  its note now steers agents to summarize via a cheap subagent instead of
+  pulling transcripts into the main conversation. The bundled SKILL.md teaches
+  the same workflow.
+- All MCP tool responses are compact JSON instead of pretty-printed (the
+  indentation was 10-15% pure token overhead).
+
+## [0.6.1] - 2026-06-17
+
+### Added
+- `resolve` tool: retract a board post by id, or clear a directory's active
+  posts. Resolved posts drop out of `read_board` but are kept for history.
+
+## [0.6.0] - 2026-06-16
+
+### Added
+- Per-directory message board (`post`, `read_board`) for cross-session,
+  cross-agent coordination.
+- Bypass-preserving resume: `termem resume` re-launches Claude Code sessions
+  with the permission mode they were started with.
+
 ## [0.5.2] - 2026-06-15
 
 ### Fixed

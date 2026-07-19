@@ -3,12 +3,12 @@
   "name": "io.github.leox255/termem",
   "description": "Cross-agent terminal memory: recall, search, and resume agent sessions by directory.",
   "repository": { "url": "https://github.com/leox255/termem", "source": "github" },
-  "version": "0.6.1",
+  "version": "0.6.2",
   "packages": [
     {
       "registryType": "cargo",
       "identifier": "termem",
-      "version": "0.6.1",
+      "version": "0.6.2",
       "transport": { "type": "stdio" }
     }
   ]

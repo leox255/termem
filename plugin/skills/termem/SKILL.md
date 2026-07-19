@@ -46,10 +46,20 @@ was written but never run — want to pick that up?").
 `recall` marks each session `cached`, `needs_summary`, or `stale`. For `needs_summary` or
 `stale`, build the memory so the next agent benefits:
 
-1. `get_session(id=...)` — read the real transcript (paginate with the cursor).
+1. `get_session(id=...)` — read the transcript (paginate with the cursor). The default
+   `digest` detail middle-truncates long messages and caps each page; it is enough to
+   write a primer. Only pass `detail="full"` when the user needs exact text back.
 2. Distil it into a tight primer: what was being worked on, what was decided, which files
    and commands mattered, and **what was left unfinished**.
-3. `save_summary(id=..., summary=..., unfinished=...)` — store it.
+3. `save_summary(id=..., summary=..., unfinished=...)` — store it (summary is capped at
+   2000 chars, `unfinished` at 600; write to fit).
+
+**Keep this work out of the main conversation.** Transcripts are big; reading them inline
+burns the user's context on raw history. When more than one session needs a summary, or
+the one that does isn't central to the current task, delegate: spawn a cheap/background
+subagent (a fast model is fine) whose only job is `get_session` then `save_summary` for
+each flagged session, then continue from the primers already cached. Summarize only
+sessions plausibly relevant to the task at hand; skip the rest.
 
 That primer is now readable by *any* agent next time — that is the whole point of the
 shared layer. Keep summaries short and factual; they are context, not prose.
