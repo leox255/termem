@@ -22,6 +22,8 @@ struct Cli {
 enum Cmd {
     /// Refresh the index from disk and print stats.
     Index,
+    /// Repoint sessions from a moved/renamed folder onto its new path.
+    Relink(RelinkArgs),
     /// List sessions for a directory.
     Ls(LsArgs),
     /// Resume a session by id or fuzzy query (default: most recent here).
@@ -92,6 +94,18 @@ struct ResumeArgs {
 }
 
 #[derive(Args)]
+struct RelinkArgs {
+    /// Old (previous) folder path recorded in the sessions. Paste it from
+    /// `termem ls --all` if unsure of the exact string.
+    old: Option<String>,
+    /// New (current) folder path to repoint onto (default: current directory).
+    new: Option<String>,
+    /// List active relink rules instead of adding one.
+    #[arg(long)]
+    list: bool,
+}
+
+#[derive(Args)]
 struct InitArgs {
     /// What to emit: a shell (zsh, bash) or an agent (claude, codex, opencode, gemini, pi).
     target: String,
@@ -108,6 +122,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.cmd {
         Some(Cmd::Index) => cmd_index(),
+        Some(Cmd::Relink(a)) => cmd_relink(a),
         Some(Cmd::Ls(a)) => cmd_ls(a),
         Some(Cmd::Resume(a)) => cmd_resume(a),
         Some(Cmd::Tui(a)) => cmd_tui(a.scope),
@@ -129,6 +144,57 @@ fn cmd_index() -> Result<()> {
         stats.deleted,
         start.elapsed().as_secs_f64()
     );
+    Ok(())
+}
+
+fn cmd_relink(a: RelinkArgs) -> Result<()> {
+    let mut idx = Index::open_default()?;
+
+    if a.list {
+        let rules = idx.remaps()?;
+        if rules.is_empty() {
+            println!("No relink rules. Add one with `termem relink <old-path> [new-path]`.");
+        } else {
+            println!("{} relink rule(s):", rules.len());
+            for (old, new, _ts) in rules {
+                println!("  {old}  ->  {new}");
+            }
+        }
+        return Ok(());
+    }
+
+    let old = match a.old {
+        Some(o) => abs_path(&o)?,
+        None => {
+            eprintln!(
+                "Usage: termem relink <old-path> [new-path]   (new-path defaults to the current dir)\n       termem relink --list"
+            );
+            std::process::exit(2);
+        }
+    };
+    // The new path should exist (you moved the folder there), so canonicalize it
+    // the same way scoped queries resolve the cwd they'll match against.
+    let new = match a.new {
+        Some(n) => resolve_cwd(&Some(PathBuf::from(n)))?,
+        None => resolve_cwd(&None)?,
+    };
+    if old == new {
+        eprintln!("Old and new paths are the same: {old}");
+        std::process::exit(2);
+    }
+
+    let stats = idx.relink(&old, &new)?;
+    println!(
+        "Relinked {} -> {}\n  {} session(s), {} board post(s) repointed.",
+        old, new, stats.sessions, stats.board
+    );
+    if stats.sessions == 0 {
+        println!(
+            "  (no indexed sessions matched that old path — check the exact string in `termem ls --all`)"
+        );
+    } else {
+        println!("  Future re-indexes will keep these remapped automatically.");
+    }
     Ok(())
 }
 
@@ -298,6 +364,26 @@ fn resolve_cwd(opt: &Option<PathBuf>) -> Result<String> {
     };
     let abs = std::fs::canonicalize(&p).unwrap_or(p);
     Ok(normalize_path(&abs.to_string_lossy()))
+}
+
+/// Absolutize a path string without requiring it to exist. The old side of a
+/// relink names a folder that has already moved away, so `canonicalize` would
+/// fail; resolve relative input against the current dir and trim a trailing
+/// separator so it matches the stored cwd exactly.
+fn abs_path(p: &str) -> Result<String> {
+    let pb = PathBuf::from(p);
+    let abs = if pb.is_absolute() {
+        pb
+    } else {
+        std::env::current_dir()?.join(pb)
+    };
+    let s = normalize_path(&abs.to_string_lossy());
+    let trimmed = s.trim_end_matches(std::path::MAIN_SEPARATOR);
+    Ok(if trimmed.is_empty() {
+        s
+    } else {
+        trimmed.to_string()
+    })
 }
 
 /// Strip the Windows extended-length (`\\?\`) prefix that `canonicalize` adds,

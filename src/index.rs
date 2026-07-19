@@ -47,6 +47,13 @@ pub struct RefreshStats {
     pub total: usize,
 }
 
+pub struct RelinkStats {
+    /// Cached session rows repointed onto the new path.
+    pub sessions: usize,
+    /// Board posts repointed onto the new path.
+    pub board: usize,
+}
+
 impl Index {
     /// Open (creating if needed) the index at the default location
     /// (`~/.termem/index.db`).
@@ -134,6 +141,19 @@ impl Index {
             .conn
             .execute("ALTER TABLE board ADD COLUMN resolved_at INTEGER", []);
 
+        // Folder-move remap rules (0.6.3). When a project directory is moved or
+        // renamed, the path baked into each tool's session file is now stale.
+        // `termem relink <old> <new>` records a rule here; it is applied on every
+        // re-parse (see `refresh`) and is durable — like summaries/board, it
+        // survives a session-cache rebuild for a new SCHEMA_VERSION.
+        self.conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS path_remap (
+                old_path   TEXT PRIMARY KEY,
+                new_path   TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            );",
+        )?;
+
         let version: i64 = self
             .conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
@@ -206,6 +226,8 @@ impl Index {
             .map(|c| c.path.to_string_lossy().to_string())
             .collect();
         let lookups = scan::build_lookups(&self.roots);
+        // Active folder-move rules, applied to each session's cwd as it is written.
+        let remap = self.load_remap()?;
 
         // Files whose (mtime, size) changed since they were last indexed.
         let changed: Vec<&scan::Candidate> = candidates
@@ -263,6 +285,16 @@ impl Index {
                 params![file_path],
             )?;
             for (s, mtime, size, body) in rows {
+                // Repoint a re-parsed session onto its current path if a relink
+                // rule covers the (now-stale) cwd recorded in the source file.
+                let remapped;
+                let s = match remap_cwd(&s.cwd, &remap) {
+                    Some(cwd) => {
+                        remapped = Session { cwd, ..s.clone() };
+                        &remapped
+                    }
+                    None => s,
+                };
                 upsert(&tx, s, *mtime, *size)?;
                 tx.execute(
                     "INSERT INTO content_fts (session_id, body) VALUES (?1, ?2)",
@@ -287,6 +319,99 @@ impl Index {
             total: candidates.len(),
         })
     }
+
+    /// Record a folder move and repoint everything under `old` to `new`.
+    ///
+    /// Two parts, both needed: the rule is persisted in `path_remap` so future
+    /// re-parses stay remapped (the source files still hold the old path), and
+    /// the rows already cached are rewritten now — the incremental refresh skips
+    /// unchanged source files, so a move would otherwise never be picked up.
+    /// Matching is exact-or-subtree, so a session that ran in a child directory
+    /// of the moved folder moves with it.
+    pub fn relink(&mut self, old: &str, new: &str) -> Result<RelinkStats> {
+        let now = chrono::Utc::now().timestamp_millis();
+        let sep = std::path::MAIN_SEPARATOR.to_string();
+        // `<old><sep>%` matches descendants; the bare `cwd = old` arm catches the
+        // folder itself. substr() is 1-based and char-counted, so cut past `old`
+        // yields the trailing `<sep><rest>` (empty for the exact match → just `new`).
+        let like = format!(
+            "{}{}%",
+            crate::query::escape_like(old),
+            crate::query::escape_like(&sep)
+        );
+        let cut = old.chars().count() as i64 + 1;
+        let tx = self.conn.transaction()?;
+        tx.execute(
+            "INSERT OR REPLACE INTO path_remap (old_path, new_path, created_at) \
+             VALUES (?1, ?2, ?3)",
+            params![old, new, now],
+        )?;
+        // The shell `key` (file_path#cwd) is left stale here; it is cosmetic
+        // (queries filter on cwd) and is rewritten whole on the next refresh of
+        // that log, since refresh deletes a file's rows before re-inserting.
+        let sessions = tx.execute(
+            "UPDATE sessions SET cwd = ?2 || substr(cwd, ?3) \
+             WHERE cwd = ?1 OR cwd LIKE ?4 ESCAPE '\\'",
+            params![old, new, cut, like],
+        )?;
+        let board = tx.execute(
+            "UPDATE board SET cwd = ?2 || substr(cwd, ?3) \
+             WHERE cwd = ?1 OR cwd LIKE ?4 ESCAPE '\\'",
+            params![old, new, cut, like],
+        )?;
+        tx.commit()?;
+        Ok(RelinkStats { sessions, board })
+    }
+
+    /// All active relink rules as `(old, new, created_at_ms)`, newest first.
+    pub fn remaps(&self) -> Result<Vec<(String, String, i64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT old_path, new_path, created_at FROM path_remap ORDER BY created_at DESC",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)?,
+            ))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
+    /// Load the relink rules, longest `old` first so the most specific rule wins
+    /// when several could match a path.
+    fn load_remap(&self) -> Result<Vec<(String, String)>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT old_path, new_path FROM path_remap")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        out.sort_by_key(|(old, _)| std::cmp::Reverse(old.chars().count()));
+        Ok(out)
+    }
+}
+
+/// Apply the first matching relink rule to `cwd` (exact or subtree), or `None`
+/// if no rule covers it. Rules are assumed pre-sorted most-specific-first.
+fn remap_cwd(cwd: &str, rules: &[(String, String)]) -> Option<String> {
+    let sep = std::path::MAIN_SEPARATOR;
+    for (old, new) in rules {
+        if cwd == old {
+            return Some(new.clone());
+        }
+        let prefix = format!("{old}{sep}");
+        if let Some(rest) = cwd.strip_prefix(&prefix) {
+            return Some(format!("{new}{sep}{rest}"));
+        }
+    }
+    None
 }
 
 /// The searchable body for a session: its first messages (capped), joined.
@@ -369,4 +494,102 @@ pub fn row_to_session(r: &rusqlite::Row) -> rusqlite::Result<Session> {
         msg_count: r.get("msg_count")?,
         bypass: r.get("bypass")?,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{remap_cwd, upsert, Index};
+    use crate::model::{Session, Source};
+    use crate::scan::ScanRoots;
+    use rusqlite::params;
+
+    fn empty_roots() -> ScanRoots {
+        ScanRoots {
+            claude: None,
+            codex: None,
+            gemini: None,
+            opencode: None,
+            shell: None,
+        }
+    }
+
+    fn session(id: &str, file: &str, cwd: &str) -> Session {
+        Session {
+            id: id.to_string(),
+            source: Source::Claude,
+            file_path: file.to_string(),
+            cwd: cwd.to_string(),
+            title: "t".to_string(),
+            first_prompt: "f".to_string(),
+            last_prompt: "l".to_string(),
+            model: None,
+            git_branch: None,
+            started_at: 1,
+            updated_at: 1,
+            msg_count: 1,
+            bypass: false,
+        }
+    }
+
+    fn cwd_of(idx: &Index, id: &str) -> String {
+        idx.conn()
+            .query_row("SELECT cwd FROM sessions WHERE id = ?1", params![id], |r| {
+                r.get::<_, String>(0)
+            })
+            .unwrap()
+    }
+
+    #[test]
+    fn remap_cwd_matches_exact_and_subtree() {
+        let rules = vec![("/old/proj".to_string(), "/new/loc".to_string())];
+        assert_eq!(remap_cwd("/old/proj", &rules).as_deref(), Some("/new/loc"));
+        assert_eq!(
+            remap_cwd("/old/proj/sub", &rules).as_deref(),
+            Some("/new/loc/sub")
+        );
+        // A sibling that merely shares the prefix string must NOT match.
+        assert_eq!(remap_cwd("/old/projector", &rules), None);
+        assert_eq!(remap_cwd("/unrelated", &rules), None);
+    }
+
+    #[test]
+    fn relink_repoints_sessions_and_board() {
+        let tmp = std::env::temp_dir().join(format!("termem-relink-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&tmp);
+        let mut idx = Index::open_with_roots(&tmp, empty_roots()).unwrap();
+
+        upsert(idx.conn(), &session("a", "/f1", "/old/proj"), 0, 0).unwrap();
+        upsert(idx.conn(), &session("b", "/f2", "/old/proj/sub"), 0, 0).unwrap();
+        upsert(idx.conn(), &session("c", "/f3", "/other"), 0, 0).unwrap();
+        idx.conn()
+            .execute(
+                "INSERT INTO board (cwd, kind, body, created_at) VALUES (?1, 'note', 'hi', 1)",
+                params!["/old/proj/sub"],
+            )
+            .unwrap();
+
+        let stats = idx.relink("/old/proj", "/new/loc").unwrap();
+        assert_eq!(stats.sessions, 2);
+        assert_eq!(stats.board, 1);
+
+        assert_eq!(cwd_of(&idx, "a"), "/new/loc");
+        assert_eq!(cwd_of(&idx, "b"), "/new/loc/sub");
+        assert_eq!(cwd_of(&idx, "c"), "/other"); // untouched
+
+        let board_cwd: String = idx
+            .conn()
+            .query_row("SELECT cwd FROM board LIMIT 1", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(board_cwd, "/new/loc/sub");
+
+        // The rule persists, so a freshly parsed session at the old path is
+        // repointed on upsert via the refresh pipeline.
+        let rules = idx.load_remap().unwrap();
+        assert_eq!(
+            remap_cwd("/old/proj/new-session", &rules).as_deref(),
+            Some("/new/loc/new-session")
+        );
+
+        let _ = std::fs::remove_file(&tmp);
+    }
 }
