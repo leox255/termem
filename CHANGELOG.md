@@ -2,6 +2,19 @@
 
 All notable changes to termem are documented here.
 
+## [0.6.3] - 2026-07-20
+
+### Added
+- `termem relink <old-path> [new-path]`: repoint sessions and board posts from
+  a moved or renamed project folder onto its new location, exact-or-subtree.
+  Rules are durable: they are recorded in the index and re-applied on every
+  re-parse, so future refreshes of the unchanged source files stay remapped.
+  `termem relink --list` shows active rules.
+
+### Changed
+- Landing page redesigned (theme toggle, live terminal demos, new motion and
+  syntax-highlighting components).
+
 ## [0.6.2] - 2026-07-20
 
 Token-efficiency release: termem responses land in a model's context, and one
