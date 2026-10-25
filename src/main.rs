@@ -33,7 +33,11 @@ enum Cmd {
     /// Emit shell integration (zsh, bash, powershell) or an agent wrapper (claude, codex, ...).
     Init(InitArgs),
     /// Run the memory MCP server over stdio (`claude mcp add termem -- termem mcp`).
-    Mcp,
+    Mcp {
+        /// Expose only post/read_board; never scan or migrate session data.
+        #[arg(long)]
+        board_only: bool,
+    },
     /// Print a one-line session count for a directory (used by the cd hook).
     Hint(HintArgs),
 }
@@ -127,7 +131,8 @@ fn main() -> Result<()> {
         Some(Cmd::Resume(a)) => cmd_resume(a),
         Some(Cmd::Tui(a)) => cmd_tui(a.scope),
         Some(Cmd::Init(a)) => cmd_init(a),
-        Some(Cmd::Mcp) => mcp::serve(),
+        Some(Cmd::Mcp { board_only: true }) => mcp::serve_board_only(),
+        Some(Cmd::Mcp { board_only: false }) => mcp::serve(),
         Some(Cmd::Hint(a)) => cmd_hint(a),
         None => cmd_tui(ScopeArgs::default()),
     }

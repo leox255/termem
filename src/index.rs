@@ -61,6 +61,19 @@ impl Index {
         Index::open_with_roots(&db_path()?, ScanRoots::from_env())
     }
 
+    /// Open the ordinary board store without reading/migrating the session cache.
+    /// In particular, an older user_version must not rebuild sessions or FTS.
+    pub fn open_board_default() -> Result<Index> {
+        let conn = Connection::open(db_path()?)?;
+        conn.busy_timeout(std::time::Duration::from_secs(3))?;
+        let index = Index {
+            conn,
+            roots: ScanRoots::from_env(),
+        };
+        index.ensure_board_schema()?;
+        Ok(index)
+    }
+
     /// Open the existing index for a read-only query WITHOUT touching the schema
     /// (no migration, no writes). The cd hint uses this so a passive `cd` never
     /// rebuilds or mutates the cache.
@@ -95,6 +108,33 @@ impl Index {
         &self.conn
     }
 
+    fn ensure_board_schema(&self) -> Result<()> {
+        // Per-directory message board: agents post short notes scoped to a
+        // working directory; other sessions in that tree read them. Durable
+        // agent-authored data, so (like summaries) it is never dropped when the
+        // session cache is rebuilt for a new SCHEMA_VERSION.
+        self.conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS board (
+                id          INTEGER PRIMARY KEY,
+                cwd         TEXT NOT NULL,
+                author      TEXT,
+                kind        TEXT NOT NULL DEFAULT 'note',
+                body        TEXT NOT NULL,
+                created_at  INTEGER NOT NULL,
+                resolved_at INTEGER
+            );
+            CREATE INDEX IF NOT EXISTS idx_board_cwd ON board(cwd);
+            CREATE INDEX IF NOT EXISTS idx_board_created ON board(created_at);",
+        )?;
+        // Soft-resolve column (0.6.1). Best-effort ALTER so a 0.6.0 board (which
+        // lacks it) upgrades in place without dropping its posts.
+        let _ = self
+            .conn
+            .execute("ALTER TABLE board ADD COLUMN resolved_at INTEGER", []);
+
+        Ok(())
+    }
+
     fn ensure_schema(&mut self) -> Result<()> {
         // Agent-authored summaries: the durable, valuable half of the store.
         // Created unconditionally and never dropped when the session cache is
@@ -118,28 +158,7 @@ impl Index {
             [],
         );
 
-        // Per-directory message board: agents post short notes scoped to a
-        // working directory; other sessions in that tree read them. Durable
-        // agent-authored data, so (like summaries) it is never dropped when the
-        // session cache is rebuilt for a new SCHEMA_VERSION.
-        self.conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS board (
-                id          INTEGER PRIMARY KEY,
-                cwd         TEXT NOT NULL,
-                author      TEXT,
-                kind        TEXT NOT NULL DEFAULT 'note',
-                body        TEXT NOT NULL,
-                created_at  INTEGER NOT NULL,
-                resolved_at INTEGER
-            );
-            CREATE INDEX IF NOT EXISTS idx_board_cwd ON board(cwd);
-            CREATE INDEX IF NOT EXISTS idx_board_created ON board(created_at);",
-        )?;
-        // Soft-resolve column (0.6.1). Best-effort ALTER so a 0.6.0 board (which
-        // lacks it) upgrades in place without dropping its posts.
-        let _ = self
-            .conn
-            .execute("ALTER TABLE board ADD COLUMN resolved_at INTEGER", []);
+        self.ensure_board_schema()?;
 
         // Folder-move remap rules (0.6.3). When a project directory is moved or
         // renamed, the path baked into each tool's session file is now stale.

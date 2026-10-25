@@ -13,8 +13,24 @@ use std::io::{BufRead, Write};
 const PROTOCOL_VERSION: &str = "2025-06-18";
 
 pub fn serve() -> Result<()> {
-    let mut index = Index::open_default()?;
-    let _ = index.refresh(); // best-effort; still serve if a scan hiccups
+    serve_mode(false)
+}
+
+/// Board access only, using the ordinary store without opening session data.
+pub fn serve_board_only() -> Result<()> {
+    serve_mode(true)
+}
+
+fn serve_mode(board_only: bool) -> Result<()> {
+    let mut index = if board_only {
+        Index::open_board_default()
+            .map_err(|_| anyhow::anyhow!("TERMEM_BOARD_STORE_UNAVAILABLE"))?
+    } else {
+        Index::open_default()?
+    };
+    if !board_only {
+        let _ = index.refresh(); // best-effort; still serve if a scan hiccups
+    }
 
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
@@ -31,7 +47,7 @@ pub fn serve() -> Result<()> {
             Ok(v) => v,
             Err(_) => continue,
         };
-        if let Some(resp) = handle(&mut index, &req) {
+        if let Some(resp) = handle(&mut index, &req, board_only) {
             let s = serde_json::to_string(&resp).unwrap_or_default();
             out.write_all(s.as_bytes())?;
             out.write_all(b"\n")?;
@@ -41,22 +57,26 @@ pub fn serve() -> Result<()> {
     Ok(())
 }
 
-fn handle(index: &mut Index, req: &Value) -> Option<Value> {
+fn handle(index: &mut Index, req: &Value, board_only: bool) -> Option<Value> {
     let id = req.get("id").cloned();
+    let mut capabilities = json!({"tools": {"listChanged": false}});
+    if board_only {
+        capabilities["experimental"] = json!({"termem/board-only": true});
+    }
     match req.get("method").and_then(|m| m.as_str()).unwrap_or("") {
         "initialize" => Some(ok(
             id,
             json!({
                 "protocolVersion": req.pointer("/params/protocolVersion")
                     .and_then(|v| v.as_str()).unwrap_or(PROTOCOL_VERSION),
-                "capabilities": {"tools": {"listChanged": false}},
+                "capabilities": capabilities,
                 "serverInfo": {"name": "termem", "version": env!("CARGO_PKG_VERSION")},
             }),
         )),
         "notifications/initialized" | "notifications/cancelled" => None,
         "ping" => Some(ok(id, json!({}))),
-        "tools/list" => Some(ok(id, json!({ "tools": tool_list() }))),
-        "tools/call" => Some(handle_call(index, id, req)),
+        "tools/list" => Some(ok(id, json!({ "tools": tool_list(board_only) }))),
+        "tools/call" => Some(handle_call(index, id, req, board_only)),
         _ if id.is_some() => Some(err(id, -32601, "Method not found")),
         _ => None,
     }
@@ -87,19 +107,23 @@ fn tool_err(id: Option<Value>, msg: &str) -> Value {
     )
 }
 
-fn handle_call(index: &mut Index, id: Option<Value>, req: &Value) -> Value {
+fn handle_call(index: &mut Index, id: Option<Value>, req: &Value, board_only: bool) -> Value {
     let name = req
         .pointer("/params/name")
         .and_then(|n| n.as_str())
         .unwrap_or("")
         .to_string();
+    // Enforce the mode before refresh or dispatch, including unadvertised calls.
+    if board_only && !is_board_tool(&name) {
+        return tool_err(id, "TERMEM_BOARD_ONLY_TOOL_UNAVAILABLE");
+    }
     let args = req
         .pointer("/params/arguments")
         .cloned()
         .unwrap_or(json!({}));
 
     // Keep the index fresh for read tools (cheap incremental refresh).
-    if matches!(name.as_str(), "search" | "recall" | "stats" | "get_session") {
+    if !board_only && matches!(name.as_str(), "search" | "recall" | "stats" | "get_session") {
         let _ = index.refresh();
     }
 
@@ -116,6 +140,7 @@ fn handle_call(index: &mut Index, id: Option<Value>, req: &Value) -> Value {
     };
     match result {
         Ok(v) => tool_ok(id, v),
+        Err(_) if board_only => tool_err(id, "TERMEM_BOARD_OPERATION_FAILED"),
         Err(e) => tool_err(id, &format!("{e}")),
     }
 }
@@ -478,8 +503,12 @@ fn tool_stats(index: &Index, args: &Value) -> Result<Value> {
 
 // ---- tool schemas ----
 
-fn tool_list() -> Value {
-    json!([
+fn is_board_tool(name: &str) -> bool {
+    matches!(name, "post" | "read_board")
+}
+
+fn tool_list(board_only: bool) -> Value {
+    let mut tools = json!([
         {
             "name": "search",
             "description": "Find past sessions by matching the query against title, first prompt, and path. Directory-scoped by default; use for 'find the session where X happened'.",
@@ -588,7 +617,14 @@ fn tool_list() -> Value {
                 }
             }
         }
-    ])
+    ]);
+    if board_only {
+        tools
+            .as_array_mut()
+            .expect("literal tool list")
+            .retain(|tool| tool["name"].as_str().is_some_and(is_board_tool));
+    }
+    tools
 }
 
 #[cfg(test)]

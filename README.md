@@ -77,6 +77,15 @@ Invoke-Expression (& termem init powershell | Out-String)
 
 termem also runs as an MCP server, so a coding agent can recall what happened in a directory before, even work done by a different agent. termem stores agent-written summaries in its own sidecar (never in the source files) and serves them to whatever agent asks next. It never calls a model and never makes a network request: the agent does the reasoning, termem does retrieval and storage.
 
+For clients that need only the shared coordination board, use `termem mcp --board-only`.
+This mode advertises and accepts only `post` and `read_board`, including rejection of
+unadvertised session-tool calls. Its initialize response identifies the mode with
+`capabilities.experimental["termem/board-only"]: true`. It uses the same configured
+board database and maintains only board schema; it neither refreshes nor migrates
+session, search, summary or path-remap data. It does not sanitize board posts or
+grant permission to unrelated directories. Normal `termem mcp` keeps its existing
+session refresh, recall and search behavior.
+
 The MCP server is the `termem mcp` command, so there is nothing extra to download: registering just points your agent at the binary already on your `PATH`. The skill is a `SKILL.md` that termem generates.
 
 Register it with Claude Code (user scope, so it works in every project):
