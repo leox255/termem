@@ -2,6 +2,13 @@
 
 All notable changes to termem are documented here.
 
+## [0.6.4] - 2026-11-24
+
+### Security
+- SQLite updated: rusqlite 0.32 to 0.43 (libsqlite3-sys 0.40), which bundles a
+  SQLite that fixes CVE-2026-119375 (RUSTSEC-2026-0459). No change to the index
+  format or the commands.
+
 ## [0.6.3] - 2026-07-20
 
 ### Added
